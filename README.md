@@ -25,14 +25,25 @@ A [justfile](./justfile) is included by default for the [casey/just][just] comma
 - `just check` runs clippy on the project to check for linter warnings
 - `just check-json` can be used by IDEs that support LSP
 
-## On GNOME
+## On COSMIC and GNOME
 
-The same build runs on GNOME (Wayland or Xorg) and borrows what the
-desktop already knows:
+The app works out which desktop launched it (from the session, or by
+asking the session bus when there is none) and behaves like a native app
+on each.
+
+On COSMIC the chrome is stock libcosmic: fonts, icon theme, light/dark and
+accent come from COSMIC Settings. Type `note ` in the launcher (Super) to
+search your notes and open one; `attic ` works too. The installer puts the
+launcher plugin under `~/.local/share/pop-launcher/plugins/attic`.
+
+On GNOME (Wayland or Xorg) the same build borrows what the desktop already
+knows:
 
 - Light/dark mode and the accent colour follow the system setting.
 - Interface and monospace fonts, the icon theme, and which title-bar
-  buttons are shown come from GNOME's settings.
+  buttons are shown come from GNOME's settings, and change with them:
+  pick a different font in Settings → Appearance and the window follows
+  without a restart.
 - Notes turn up in the Activities overview search; pick one to open it,
   or press the arrow to search inside the app. (Log in again after
   installing for the shell to notice the provider.)
@@ -49,10 +60,12 @@ a single [PocketBase](https://pocketbase.io) binary. Set it up in five
 minutes with [server/README.md](./server/README.md), then open
 Options → Sync in the app, enter the address, an email and a password,
 and press **Create account**. Every other machine signs in with the same
-details. The server only ever sees sealed packages: a note's id, a
-revision counter, a timestamp and which device wrote it — never its
-text. If two machines change the same note between syncs, both versions
-are kept and one is marked "(conflict, *machine*)".
+details. The server you run holds the note text (over HTTPS, so keep it
+yours); the only metadata it indexes is a note's id, a revision counter,
+a timestamp and which device wrote it. If two machines change the same
+note between syncs, both versions are kept and one is marked
+"(conflict, *machine*)". Any folder-sync tool works too, since the notes
+are plain files: Syncthing between two machines is the simplest.
 
 ## Translators
 

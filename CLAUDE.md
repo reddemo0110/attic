@@ -30,7 +30,7 @@ Toolchain lives in `~/.cargo/bin` (rustup); make sure it's on `PATH`.
   launcher entry with absolute Exec, icon, metainfo); `just uninstall-user`
 - `RUST_LOG=attic=debug cargo run` for tracing output
 - Visual check without a human: `tools/xshot.py out.png [--script ...]`
-  runs the app on Xwayland (`XSHOT_LOG=path` keeps its log), drives it via the `JJB_SCRIPT` hook (`step:arg` form, e.g. `--script 'new;type:Hello;wait:1000'`; steps:
+  runs the app on Xwayland (`XSHOT_LOG=path` keeps its log; the app is killed once the picture is taken, so for a check that needs it alive longer pass `--wait N`, a script `wait:` alone does not hold it), drives it via the `JJB_SCRIPT` hook (`step:arg` form, e.g. `--script 'new;type:Hello;wait:1000'`; steps:
   new, type, search, select, pin, trash, folder, format, selectall, dock,
   themes, theme, image, imgframe, imgalign, imgwidth, imgcaption, imgmenu, imgdrag, imgmove, linkdrag, fold, font, pairing, size, docksize, section, tagmenu, renametag, nav, togglebox, marker, measure, follow, icon, coffee, tagicon, pickdir, iconset, attach, tagdrag, tagmove, addspace, weight, fontfor, buffet, sel, sweep, cell, editcell, fpick, fpickover, pickdone, draft, fill, tsel, sync, syncnow, key (`key:backspace`, `key:left:3`; backspace, delete, enter, tab, arrows, home, end), quit, wait, exit; `;` separates steps — write `\;` inside text; a `\n` in `type:` is a real Enter, so it continues lists like the keyboard does),
   and captures the window with X auto-repeat switched off. It runs against a
@@ -85,10 +85,22 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   compares its output with the native scanner.
 - `src/config.rs` — cosmic-config entry (`notes_dir`, `device_id`); path
   defaults come from the core's platform module.
-- `src/desktop.rs` — which desktop we are on; off COSMIC, fonts / icon theme /
-  title-bar buttons are read from the portal (`org.gnome.desktop.*`) and
-  pushed into libcosmic's `COSMIC_TK` by `reassert()` (called from the
-  header/view because libcosmic overwrites that struct on its config update).
+- `src/desktop.rs` — which desktop we are on (`XDG_CURRENT_DESKTOP` and
+  the older session variables; with none set, whoever owns
+  `com.system76.CosmicSettingsDaemon` / `org.gnome.Shell` on the bus); off
+  COSMIC, fonts / icon theme / title-bar buttons are read from the portal
+  (`org.gnome.desktop.*`) and pushed into libcosmic's `COSMIC_TK` by
+  `reassert()` (called from the header/view because libcosmic overwrites
+  that struct on its config update). `watch()` is the app subscription
+  that follows the portal's `SettingChanged` (own thread + runtime) and
+  `apply()` adopts a change live, icon theme included. The ignored
+  `portal_signal_probe` test checks the signal path against a real session.
+- `src/launcher.rs` — `attic --launcher-plugin`: the COSMIC launcher
+  (pop-launcher) plugin, the GNOME search provider's twin: JSON lines on
+  stdin/stdout, `note <words>` lists hits from the read-only index, picking
+  one launches the app on the file. `resources/launcher-plugin.ron` is the
+  manifest; the installers write it plus an `attic-launcher` wrapper script
+  under `pop-launcher/plugins/attic`. Logs go to stderr in this mode.
 - `src/search_provider.rs` — `attic --search-provider`: the headless
   GNOME Shell search service (`org.gnome.Shell.SearchProvider2`), answering
   from `store::Index` (read-only index.db) and launching the app to open a

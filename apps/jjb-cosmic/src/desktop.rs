@@ -15,10 +15,22 @@
 //! libcosmic replaces that struct wholesale when its own config subscription
 //! reports (which it does once at start-up, with defaults, when the file is
 //! missing), so [`reassert`] is cheap and idempotent and the app calls it
-//! on every view.
+//! on every view. [`watch`] follows the portal's `SettingChanged` signal so
+//! a font or icon theme changed in GNOME Settings takes effect without a
+//! restart, the way it does for native apps.
+//!
+//! Which desktop we are on comes from the session environment
+//! (`XDG_CURRENT_DESKTOP`, with the older variables as fallbacks); a
+//! process started without one (D-Bus activation, a launcher plugin) asks
+//! the session bus who is running instead.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, RwLock};
+
+/// Owned on the session bus only while that desktop runs. Checked in this
+/// order: COSMIC implements some `org.gnome.*` names for compatibility.
+const COSMIC_BUS_NAME: &str = "com.system76.CosmicSettingsDaemon";
+const GNOME_BUS_NAME: &str = "org.gnome.Shell";
 
 /// The desktop environment the app was launched from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,11 +54,71 @@ impl Desktop {
         }
     }
 
+    /// Classify from the session's variables, most authoritative first:
+    /// the first one that names a desktop we know wins. `None` when none
+    /// of them is set at all (the process has no session environment).
+    pub fn from_env<'a>(vars: impl IntoIterator<Item = &'a str>) -> Option<Desktop> {
+        let mut any = false;
+        for value in vars {
+            any = true;
+            let desktop = Desktop::from_xdg(value);
+            if desktop != Desktop::Other {
+                return Some(desktop);
+            }
+        }
+        any.then_some(Desktop::Other)
+    }
+
     pub fn current() -> Desktop {
         static CURRENT: OnceLock<Desktop> = OnceLock::new();
         *CURRENT.get_or_init(|| {
-            std::env::var("XDG_CURRENT_DESKTOP").map_or(Desktop::Other, |v| Desktop::from_xdg(&v))
+            let vars: Vec<String> = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"]
+                .iter()
+                .filter_map(|key| std::env::var(key).ok())
+                .filter(|v| !v.trim().is_empty())
+                .collect();
+            if let Some(desktop) = Desktop::from_env(vars.iter().map(String::as_str)) {
+                return desktop;
+            }
+            let desktop = probe_bus();
+            tracing::debug!(?desktop, "no session variables; desktop guessed from the bus");
+            desktop
         })
+    }
+
+    /// For logs and the About dialog.
+    pub fn name(self) -> &'static str {
+        match self {
+            Desktop::Cosmic => "COSMIC",
+            Desktop::Gnome => "GNOME",
+            Desktop::Other => "another desktop",
+        }
+    }
+}
+
+/// Which desktop owns its well-known name on the session bus.
+fn probe_bus() -> Desktop {
+    let Ok(conn) = zbus::blocking::Connection::session() else {
+        return Desktop::Other;
+    };
+    let owned = |name: &str| -> bool {
+        conn.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "NameHasOwner",
+            &(name,),
+        )
+        .ok()
+        .and_then(|reply| reply.body().deserialize::<bool>().ok())
+        .unwrap_or(false)
+    };
+    if owned(COSMIC_BUS_NAME) {
+        Desktop::Cosmic
+    } else if owned(GNOME_BUS_NAME) {
+        Desktop::Gnome
+    } else {
+        Desktop::Other
     }
 }
 
@@ -67,26 +139,51 @@ pub struct Settings {
     pub show_maximize: Option<bool>,
 }
 
-static SETTINGS: OnceLock<Settings> = OnceLock::new();
+/// What the desktop last told us; `None` until first asked.
+static SETTINGS: RwLock<Option<Settings>> = RwLock::new(None);
 
-/// The settings read at start-up (empty on COSMIC, where libcosmic reads
-/// its own config).
-pub fn settings() -> &'static Settings {
-    SETTINGS.get_or_init(|| {
-        if Desktop::current() == Desktop::Cosmic {
-            return Settings::default();
-        }
-        let s = read_portal().unwrap_or_else(read_gsettings);
-        tracing::info!(desktop = ?Desktop::current(), ?s, "desktop settings");
-        s
-    })
+/// The desktop's settings as last read: at start-up, then whenever
+/// [`apply`] adopted a change. Empty on COSMIC, where libcosmic reads its
+/// own config.
+pub fn settings() -> Settings {
+    if let Some(s) = SETTINGS.read().unwrap().as_ref() {
+        return s.clone();
+    }
+    let s = read_current();
+    tracing::info!(desktop = ?Desktop::current(), ?s, "desktop settings");
+    SETTINGS.write().unwrap().get_or_insert(s).clone()
+}
+
+fn read_current() -> Settings {
+    if Desktop::current() == Desktop::Cosmic {
+        return Settings::default();
+    }
+    read_portal().unwrap_or_else(read_gsettings)
+}
+
+/// Adopt settings the desktop changed while we run (from [`watch`]):
+/// remember them, switch the icon theme and push the rest into libcosmic.
+/// Returns whether anything was different.
+pub fn apply(new: Settings) -> bool {
+    if SETTINGS.read().unwrap().as_ref() == Some(&new) {
+        return false;
+    }
+    if let Some(theme) = &new.icon_theme
+        && cosmic::icon_theme::default() != *theme
+    {
+        cosmic::icon_theme::set_default(theme.clone());
+    }
+    push(&new);
+    tracing::info!(?new, "desktop settings changed");
+    *SETTINGS.write().unwrap() = Some(new);
+    true
 }
 
 /// Push the desktop's fonts and button layout into libcosmic's toolkit
 /// config if they are not there already. Safe to call often.
 pub fn reassert() {
     let s = settings();
-    if *s == Settings::default() {
+    if s == Settings::default() {
         return;
     }
     let tk = cosmic::config::COSMIC_TK.read().unwrap();
@@ -100,9 +197,12 @@ pub fn reassert() {
         || s.show_minimize.is_some_and(|b| tk.show_minimize != b)
         || s.show_maximize.is_some_and(|b| tk.show_maximize != b);
     drop(tk);
-    if !stale {
-        return;
+    if stale {
+        push(&s);
     }
+}
+
+fn push(s: &Settings) {
     let mut tk = cosmic::config::COSMIC_TK.write().unwrap();
     if let Some(f) = &s.interface_font {
         tk.interface_font.family.clone_from(f);
@@ -116,6 +216,201 @@ pub fn reassert() {
     if let Some(b) = s.show_maximize {
         tk.show_maximize = b;
     }
+}
+
+/// The window outline GNOME draws: Adwaita's faint translucent line, a
+/// 10 % white highlight on dark and a 12 % black line on light.
+fn outline_colour(is_dark: bool) -> cosmic::cosmic_theme::palette::Srgba {
+    use cosmic::cosmic_theme::palette::Srgba;
+    if is_dark {
+        Srgba::new(1.0, 1.0, 1.0, 0.10)
+    } else {
+        Srgba::new(0.0, 0.0, 0.0, 0.12)
+    }
+}
+
+/// How many times to soften one and the same system theme before giving
+/// up on it. At start-up libcosmic installs the theme, replaces it when
+/// the portal reports the colour scheme and rebuilds it for the accent,
+/// each time dropping our divider; three attempts were seen to be needed
+/// before one stuck. Past this it would be a redraw loop, not a race.
+const OUTLINE_ATTEMPTS: u8 = 6;
+/// (is_dark, accent) of the theme last softened, and how often.
+static OUTLINE_TRIES: Mutex<Option<((bool, [u8; 3]), u8)>> = Mutex::new(None);
+
+/// libcosmic draws the 1 px border around a floating window in the
+/// theme's `bg_divider`, which it composites to an opaque 20 % blend of
+/// the text colour: the hard grey line around the window next to GNOME's
+/// own, which have a faint translucent outline (and a shadow Mutter leaves
+/// to the client, which libcosmic cannot draw). The border is hard-wired
+/// in libcosmic's window layout, so the theme is the lever: the system
+/// theme with its divider softened to GNOME's, or `None` when there is
+/// nothing to do (on COSMIC, under a custom or high-contrast theme, or
+/// once it is already in place). libcosmic reinstalls a fresh system
+/// theme at start-up and on every dark/light or accent change, so the app
+/// checks [`outline_stale`] on each redraw and re-applies. The theme's
+/// colour fields are private; the change goes through its serde form.
+pub fn softened_theme() -> Option<cosmic::Theme> {
+    use cosmic::theme::ThemeType;
+    if Desktop::current() == Desktop::Cosmic {
+        return None;
+    }
+    let active = cosmic::theme::active();
+    if !matches!(
+        active.theme_type,
+        ThemeType::System { .. } | ThemeType::Dark | ThemeType::Light
+    ) {
+        return None;
+    }
+    let theme = active.cosmic();
+    let wanted = outline_colour(theme.is_dark);
+    if theme.bg_divider() == wanted {
+        return None;
+    }
+    let accent = theme.accent_color().into_format::<u8, u8>();
+    let key = (theme.is_dark, [accent.red, accent.green, accent.blue]);
+    {
+        let mut tries = OUTLINE_TRIES.lock().unwrap();
+        let n = match *tries {
+            Some((k, n)) if k == key => n,
+            _ => 0,
+        };
+        if n >= OUTLINE_ATTEMPTS {
+            return None;
+        }
+        *tries = Some((key, n + 1));
+    }
+    let softened = (|| -> serde_json::Result<cosmic::cosmic_theme::Theme> {
+        let mut value = serde_json::to_value(theme)?;
+        value["background"]["divider"] = serde_json::json!({
+            "red": wanted.red,
+            "green": wanted.green,
+            "blue": wanted.blue,
+            "alpha": wanted.alpha,
+        });
+        serde_json::from_value(value)
+    })();
+    match softened {
+        Ok(softened) => {
+            tracing::info!(dark = theme.is_dark, "softening the window outline");
+            Some(cosmic::Theme::system(std::sync::Arc::new(softened)))
+        }
+        Err(err) => {
+            tracing::warn!(%err, "not softening the window outline");
+            None
+        }
+    }
+}
+
+/// Cheap enough for the event listener: does the active theme still
+/// carry libcosmic's outline?
+pub fn outline_stale() -> bool {
+    use cosmic::theme::ThemeType;
+    if Desktop::current() == Desktop::Cosmic {
+        return false;
+    }
+    let active = cosmic::theme::active();
+    if !matches!(
+        active.theme_type,
+        ThemeType::System { .. } | ThemeType::Dark | ThemeType::Light
+    ) {
+        return false;
+    }
+    let theme = active.cosmic();
+    if theme.bg_divider() == outline_colour(theme.is_dark) {
+        return false;
+    }
+    let accent = theme.accent_color().into_format::<u8, u8>();
+    let key = (theme.is_dark, [accent.red, accent.green, accent.blue]);
+    !matches!(*OUTLINE_TRIES.lock().unwrap(), Some((k, n)) if k == key && n >= OUTLINE_ATTEMPTS)
+}
+
+/// `org.freedesktop.portal.Settings`, the signal half: the portal relays
+/// every gsettings change in the namespaces it serves.
+#[zbus::proxy(
+    interface = "org.freedesktop.portal.Settings",
+    default_service = "org.freedesktop.portal.Desktop",
+    default_path = "/org/freedesktop/portal/desktop",
+    gen_blocking = false
+)]
+trait PortalSettings {
+    #[zbus(signal)]
+    fn setting_changed(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: zbus::zvariant::Value<'_>,
+    ) -> zbus::Result<()>;
+}
+
+/// The desktop's settings as they change while the app runs: a new
+/// [`Settings`] each time GNOME's fonts, icon theme or title-bar buttons
+/// change, for the app to hand to [`apply`]. Never yields on COSMIC
+/// (libcosmic follows its own config there) or where no portal answers.
+pub fn watch() -> cosmic::iced::Subscription<Settings> {
+    cosmic::iced::Subscription::run(|| {
+        cosmic::iced::stream::channel(4, |tx| async move {
+            if Desktop::current() != Desktop::Cosmic {
+                // The bus client lives on its own thread with its own
+                // runtime: the app's executor is iced's business, and the
+                // blocking reader (`read_current`) is at home there.
+                std::thread::Builder::new()
+                    .name("desktop-settings".into())
+                    .spawn(move || {
+                        let runtime = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build();
+                        let served = runtime.map_err(zbus::Error::from).and_then(|rt| {
+                            rt.block_on(follow(tx))
+                        });
+                        if let Err(err) = served {
+                            tracing::warn!(%err, "not following desktop settings");
+                        }
+                    })
+                    .ok();
+            }
+            std::future::pending::<()>().await;
+        })
+    })
+}
+
+async fn follow(
+    mut tx: cosmic::iced::futures::channel::mpsc::Sender<Settings>,
+) -> zbus::Result<()> {
+    use cosmic::iced::futures::{SinkExt, StreamExt};
+    let conn = zbus::Connection::session().await?;
+    let proxy = PortalSettingsProxy::new(&conn).await?;
+    let mut changes = proxy.receive_setting_changed().await?;
+    tracing::debug!("following desktop settings through the portal");
+    while let Some(signal) = changes.next().await {
+        let args = match signal.args() {
+            Ok(args) => args,
+            Err(err) => {
+                tracing::warn!(%err, "portal signal not understood");
+                continue;
+            }
+        };
+        let ns: &str = args.namespace();
+        tracing::debug!(ns, key = args.key(), "portal setting changed");
+        if ns != INTERFACE_NS && ns != WM_NS {
+            continue;
+        }
+        // The signal carries the one key, but GNOME fires a burst of them
+        // for a font change and ReadAll is one cheap round trip: re-read
+        // the lot rather than patch a cache. Off the async thread, since
+        // the reader is the blocking client.
+        let s = match tokio::task::spawn_blocking(read_current).await {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::warn!(%err, "re-reading desktop settings");
+                continue;
+            }
+        };
+        if tx.send(s).await.is_err() {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Style words a Pango font description may end with, after the family.
@@ -287,6 +582,54 @@ mod tests {
         assert_eq!(Desktop::from_xdg("GNOME-Classic:GNOME"), Desktop::Gnome);
         assert_eq!(Desktop::from_xdg("KDE"), Desktop::Other);
         assert_eq!(Desktop::from_xdg(""), Desktop::Other);
+    }
+
+    /// Needs a desktop session with a portal; change a font in the
+    /// desktop's settings while it waits.
+    #[test]
+    #[ignore = "needs a live desktop session: change a font while it runs"]
+    fn portal_signal_probe() {
+        use cosmic::iced::futures::StreamExt;
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter("attic=debug,zbus=debug")
+            .with_test_writer()
+            .try_init();
+        let (tx, mut rx) = cosmic::iced::futures::channel::mpsc::channel(4);
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            if let Err(err) = rt.block_on(follow(tx)) {
+                eprintln!("follow: {err}");
+            }
+        });
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let got = rt.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(12), rx.next()).await
+        });
+        eprintln!("probe got: {got:?}");
+        assert!(got.is_ok(), "no settings change arrived");
+    }
+
+    #[test]
+    fn falls_back_through_session_variables() {
+        assert_eq!(Desktop::from_env(["GNOME"]), Some(Desktop::Gnome));
+        // XDG_CURRENT_DESKTOP wins over the older variables.
+        assert_eq!(
+            Desktop::from_env(["COSMIC", "gnome"]),
+            Some(Desktop::Cosmic)
+        );
+        // An empty or foreign first variable falls through to the next.
+        assert_eq!(Desktop::from_env(["", "cosmic"]), Some(Desktop::Cosmic));
+        assert_eq!(Desktop::from_env(["X-Generic", "GNOME"]), Some(Desktop::Gnome));
+        // Set but unrecognised: it is some other desktop, not unknown.
+        assert_eq!(Desktop::from_env(["KDE"]), Some(Desktop::Other));
+        // Nothing set at all: the caller has to look elsewhere.
+        assert_eq!(Desktop::from_env([]), None);
     }
 
     #[test]

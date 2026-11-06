@@ -69,26 +69,28 @@ impl Provider {
         }
     }
 
-    /// Launch (or hand to the running instance, via single-instance
-    /// activation) the app with these arguments.
-    fn launch(args: &[String]) {
-        let exe = match std::env::current_exe() {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::error!(%err, "locating the app binary");
-                return;
-            }
-        };
-        match std::process::Command::new(&exe)
-            .args(args)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok(_) => tracing::info!(?args, "launched the app"),
-            Err(err) => tracing::error!(%err, exe = %exe.display(), "launching the app"),
+}
+
+/// Launch (or hand to the running instance, via single-instance
+/// activation) the app with these arguments. Shared with the COSMIC
+/// launcher plugin, which opens hits the same way.
+pub(crate) fn launch_app(args: &[String]) {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(err) => {
+            tracing::error!(%err, "locating the app binary");
+            return;
         }
+    };
+    match std::process::Command::new(&exe)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_) => tracing::info!(?args, "launched the app"),
+        Err(err) => tracing::error!(%err, exe = %exe.display(), "launching the app"),
     }
 }
 
@@ -148,12 +150,12 @@ impl Provider {
             tracing::warn!(identifier, "result vanished from the index");
             return;
         };
-        Self::launch(&[path.to_string_lossy().into_owned()]);
+        launch_app(&[path.to_string_lossy().into_owned()]);
     }
 
     fn launch_search(&self, terms: Vec<String>, _timestamp: u32) {
         self.touch();
-        Self::launch(&["--search".to_owned(), terms.join(" ")]);
+        launch_app(&["--search".to_owned(), terms.join(" ")]);
     }
 }
 

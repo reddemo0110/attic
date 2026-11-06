@@ -13,6 +13,7 @@ mod glyph;
 mod i18n;
 mod icon;
 mod images;
+mod launcher;
 mod markdown;
 mod probe;
 mod retro;
@@ -35,25 +36,33 @@ Options:
   --new              Start on a fresh note
   --search TEXT...   Open with TEXT in the search box
   --search-provider  Run the GNOME Shell search service (D-Bus activated)
+  --launcher-plugin  Run the COSMIC launcher plugin (started by pop-launcher)
   -V, --version      Print the version
   -h, --help         Show this help";
 
 fn main() -> cosmic::iced::Result {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let launcher_plugin = args.iter().any(|a| a == "--launcher-plugin");
+
     // Off COSMIC there is no cosmic-theme config, and libcosmic logs an
     // error per missing key at every start; that is expected there.
-    let default_filter = if desktop::Desktop::current() == desktop::Desktop::Cosmic {
+    let desktop = desktop::Desktop::current();
+    let default_filter = if desktop == desktop::Desktop::Cosmic {
         "attic=info,warn"
     } else {
         "attic=info,warn,cosmic::theme=off"
     };
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| default_filter.into()),
-        )
-        .init();
-
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let log = tracing_subscriber::fmt().with_env_filter(
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| default_filter.into()),
+    );
+    // The launcher plugin's stdout is its protocol; keep the log off it.
+    if launcher_plugin {
+        log.with_writer(std::io::stderr).init();
+    } else {
+        log.init();
+    }
+    tracing::info!(desktop = desktop.name(), "session");
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{USAGE}");
         return Ok(());
@@ -64,10 +73,16 @@ fn main() -> cosmic::iced::Result {
     }
 
     // `attic --search-provider` is the headless GNOME Shell search
-    // service, D-Bus activated by the shell; no window, no store.
+    // service, D-Bus activated by the shell, and `attic --launcher-plugin`
+    // its COSMIC twin, started by pop-launcher; no window, no store.
     let Some(flags) = app::Flags::from_args(args) else {
-        if let Err(err) = search_provider::serve(app::AppModel::APP_ID) {
-            tracing::error!(%err, "search provider");
+        let served = if launcher_plugin {
+            launcher::serve(app::AppModel::APP_ID)
+        } else {
+            search_provider::serve(app::AppModel::APP_ID)
+        };
+        if let Err(err) = served {
+            tracing::error!(%err, "headless service");
             std::process::exit(1);
         }
         return Ok(());
@@ -91,10 +106,10 @@ fn main() -> cosmic::iced::Result {
     }
 
     // Off COSMIC, borrow the desktop's fonts, icon theme and title-bar
-    // buttons (GNOME via the portal) rather than assume COSMIC's.
-    let desk = desktop::settings();
-    if let Some(theme) = &desk.icon_theme {
-        settings = settings.default_icon_theme(theme.clone());
+    // buttons (GNOME via the portal) rather than assume COSMIC's. The app
+    // keeps following them through `desktop::watch()`.
+    if let Some(theme) = desktop::settings().icon_theme {
+        settings = settings.default_icon_theme(theme);
     }
     desktop::reassert();
 

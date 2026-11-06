@@ -76,12 +76,19 @@ install -Dm0644 apps/jjb-cosmic/resources/search-provider.ini \
 mkdir -p "$BASE/dbus-1/services"
 sed "s|^Exec=.*|Exec=$BIN_DIR/$NAME --search-provider|" apps/jjb-cosmic/resources/search-provider.service \
     > "$BASE/dbus-1/services/$APPID.SearchProvider.service"
+# COSMIC launcher plugin: `note <words>` in the launcher lists notes.
+# pop-launcher reads ~/.local/share/pop-launcher/plugins; harmless elsewhere.
+PLUGIN_DIR="$BASE/pop-launcher/plugins/$NAME"
+install -Dm0644 apps/jjb-cosmic/resources/launcher-plugin.ron "$PLUGIN_DIR/plugin.ron"
+printf '#!/bin/sh\nexec "%s" --launcher-plugin\n' "$BIN_DIR/$NAME" > "$PLUGIN_DIR/$NAME-launcher"
+chmod 0755 "$PLUGIN_DIR/$NAME-launcher"
 update-desktop-database "$BASE/applications" 2>/dev/null || true
 gtk-update-icon-cache -q -t -f "$BASE/icons/hicolor" 2>/dev/null || true
 
 say "Installed. Find Attic in the app library; right-click it in the dock to pin."
 case ":${XDG_CURRENT_DESKTOP:-}:" in
     *GNOME*) echo "GNOME: notes show up in the Activities overview search after your next login (or Alt+F2, r, Enter on X11)." ;;
+    *COSMIC*) echo "COSMIC: type 'note ' in the launcher (Super) to search your notes." ;;
 esac
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

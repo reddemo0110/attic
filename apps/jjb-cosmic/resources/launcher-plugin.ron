@@ -1,0 +1,16 @@
+// pop-launcher manifest for the COSMIC launcher. Installed as
+// `~/.local/share/pop-launcher/plugins/attic/plugin.ron` (or under
+// /usr/lib/pop-launcher) next to a small `attic-launcher` script that runs
+// `attic --launcher-plugin`; see install.sh and the justfile. The regex must
+// agree with `launcher::PREFIXES`.
+(
+    name: "Attic notes",
+    description: "Syntax: note <words>\nExample: note tuscany",
+    query: (
+        regex: "^(note|attic)\\s.*",
+        help: "note ",
+        isolate: true,
+    ),
+    bin: (path: "attic-launcher"),
+    icon: Name("io.github.reddemo0110.Attic"),
+)

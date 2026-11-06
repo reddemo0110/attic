@@ -276,7 +276,7 @@ impl Flags {
         let mut args = args.into_iter();
         while let Some(a) = args.next() {
             match a.as_str() {
-                "--search-provider" => return None,
+                "--search-provider" | "--launcher-plugin" => return None,
                 "--new" | "--new-note" => flags.new_note = true,
                 "--search" => flags.search = Some(args.by_ref().collect::<Vec<_>>().join(" ")),
                 "--" => flags.open.extend(args.by_ref()),
@@ -345,6 +345,12 @@ pub enum Message {
     OpenPaths(Vec<String>),
     /// Fill the search box from outside (the shell's "search in app").
     SearchFromOutside(String),
+    /// The desktop changed its fonts, icon theme or title-bar buttons
+    /// while we run (GNOME, through the portal).
+    DesktopSettings(crate::desktop::Settings),
+    /// libcosmic installed a fresh system theme; off COSMIC, soften its
+    /// window outline to the desktop's (see `desktop::softened_theme`).
+    SoftenOutline,
     /// Something outside asked for the window: raise it.
     Raise,
     ToggleContextPage(ContextPage),
@@ -849,7 +855,16 @@ impl cosmic::Application for AppModel {
     }
 
     fn style(&self) -> Option<cosmic::iced::theme::Style> {
-        Some(retro::app_style(&self.palette()))
+        let mut style = retro::app_style(&self.palette());
+        // With rounded corners (a floating window off COSMIC: Mutter and
+        // KWin have no corner-clipping protocol) libcosmic draws the window
+        // as a rounded container and leaves the surface behind it clear,
+        // the way its own default style does. A palette colour there fills
+        // the corner outside the curve with a square of near-black.
+        if !self.core.window.sharp_corners && !self.core.window.is_maximized {
+            style.background_color = cosmic::iced::Color::TRANSPARENT;
+        }
+        Some(style)
     }
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
@@ -1211,16 +1226,27 @@ impl cosmic::Application for AppModel {
             );
         }
 
+        subscriptions.push(crate::desktop::watch().map(Message::DesktopSettings));
+
         Subscription::batch(subscriptions)
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         let task = self.update_inner(message);
-        let loads = self.image_loads();
-        if loads.is_empty() {
-            task
+        let mut tasks = vec![task];
+        tasks.extend(self.image_loads());
+        // Off COSMIC, libcosmic installs a fresh system theme at start-up
+        // and on every dark/light or accent change, outside any message of
+        // ours; the redraw event does not reach subscriptions, so the next
+        // message (start-up has plenty, and every pointer move is one)
+        // puts the desktop's window outline back.
+        if crate::desktop::outline_stale() {
+            tasks.push(self.update_inner(Message::SoftenOutline));
+        }
+        if tasks.len() == 1 {
+            tasks.pop().unwrap_or_else(Task::none)
         } else {
-            Task::batch(std::iter::once(task).chain(loads))
+            Task::batch(tasks)
         }
     }
 
@@ -2554,6 +2580,19 @@ impl AppModel {
             }
 
             Message::FontLoaded => {}
+
+            Message::DesktopSettings(settings) => {
+                // `apply` pushes them into libcosmic; the redraw that
+                // follows this message picks them up.
+                crate::desktop::apply(settings);
+            }
+
+            Message::SoftenOutline => {
+                tracing::debug!("redraw found libcosmic's window outline");
+                if let Some(theme) = crate::desktop::softened_theme() {
+                    return cosmic::command::set_theme(theme);
+                }
+            }
 
             Message::LoadFonts => {
                 crate::desktop::reassert();

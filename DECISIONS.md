@@ -1153,3 +1153,54 @@ image breaks a heading mid-word when the column is under ~100 px.
   Cargo.toml and the metainfo already point there; GitHub redirects
   the old name), and rethink the launcher icon, whose two dots and hash
   spelled "jot jot boom".
+
+## 2026-11-04 — First-class on both desktops: detection, live GNOME settings, COSMIC launcher
+- Detection: `XDG_CURRENT_DESKTOP` first, then `XDG_SESSION_DESKTOP` and
+  `DESKTOP_SESSION`; with none set (D-Bus activation, a launcher plugin,
+  `env -i`) the session bus is asked who owns
+  `com.system76.CosmicSettingsDaemon` (checked first: COSMIC also owns
+  some `org.gnome.*` names for compatibility) or `org.gnome.Shell`. The
+  result is logged at start-up (`session desktop=…`).
+- GNOME settings are now followed live, not read once: `desktop::watch()`
+  listens to `org.freedesktop.portal.Settings.SettingChanged` for the
+  `org.gnome.desktop.interface` / `…wm.preferences` namespaces and re-reads
+  everything with one `ReadAll` (GNOME fires the signal twice per change;
+  `apply` ignores a no-op). The listener runs on its own thread with a
+  current-thread tokio runtime so neither the iced executor nor the
+  blocking portal reader is a concern. Verified on this GNOME session: a
+  font change in Settings re-renders the menu bar within milliseconds.
+  Dark/light, contrast and accent were already live through libcosmic's
+  own `xdg-portal` subscription, so roadmap item 1 from 2026-09-03 is done.
+- COSMIC gets the GNOME search provider's twin: a pop-launcher plugin
+  (`attic --launcher-plugin`, manifest `resources/launcher-plugin.ron`)
+  behind the prefix `note ` / `attic `, isolated so it does not spam the
+  app list on every keystroke; just the prefix lists recent notes. Chosen
+  over a prefix-less plugin because the COSMIC launcher is also the app
+  switcher and its own plugins all take a prefix. Logs go to stderr there
+  because stdout is the protocol. Installed by both installers as
+  `pop-launcher/plugins/attic/{plugin.ron, attic-launcher}`; harmless on
+  GNOME.
+- Not done, still queued: Flatpak; the Mutter/KWin paper-cut sweep.
+
+- Paper cut found on GNOME the same day (2026-11-05): a black square in
+  the window's top-left corner, outside the rounded header. Cause: the
+  app's `style()` painted the palette background over the whole surface,
+  while libcosmic draws the window as a rounded container and expects the
+  surface behind it to be transparent (its default style is, except when
+  maximised). On COSMIC the compositor clips the corners through its own
+  protocol, so it never showed there. Fix: transparent background whenever
+  the corners are rounded; the palette colour stays for maximised / tiled
+  windows, where the corners are square anyway.
+- Second paper cut the same evening: a hard grey 1 px line around the
+  window where GNOME's windows have a faint outline. libcosmic draws that
+  border in `bg_divider` (text colour at 20 %, composited opaque) and the
+  border is hard-wired in its window layout, so the app softens the
+  divider in the active system theme instead (white 10 % on dark, black
+  12 % on light, Adwaita's values) through `cosmic::command::set_theme`,
+  re-applied whenever a redraw finds libcosmic has installed a fresh
+  theme (start-up, dark/light, accent). The other half of GNOME's look,
+  the soft drop shadow, is drawn by the client under Mutter (no
+  server-side decorations are offered: `wayland-info` lists no
+  xdg-decoration) and libcosmic / iced_winit have no shadow margin, so
+  that one is out of reach without a different toolkit; recorded as the
+  limit of the libcosmic shell on GNOME.

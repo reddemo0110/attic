@@ -22,6 +22,9 @@ icon-svg := appid + '.svg'
 # .service. Harmless on other desktops.
 search-ini := appid + '.search-provider.ini'
 search-service := appid + '.SearchProvider.service'
+# COSMIC launcher plugin: pop-launcher reads `plugin.ron` and starts the
+# script beside it (`attic --launcher-plugin`). Harmless on other desktops.
+launcher-script := name + '-launcher'
 
 # Install destinations
 base-dir := absolute_path(clean(rootdir / prefix))
@@ -32,6 +35,7 @@ icons-dst := base-dir / 'share' / 'icons' / 'hicolor'
 icon-svg-dst := icons-dst / 'scalable' / 'apps' / icon-svg
 search-ini-dst := base-dir / 'share' / 'gnome-shell' / 'search-providers' / search-ini
 search-service-dst := base-dir / 'share' / 'dbus-1' / 'services' / search-service
+launcher-plugin-dst := base-dir / 'lib' / 'pop-launcher' / 'plugins' / name
 
 # Default recipe which runs `just build-release`
 default: build-release
@@ -82,10 +86,14 @@ install:
     install -Dm0644 {{ app-dir / 'resources' / 'search-provider.ini' }} {{search-ini-dst}}
     mkdir -p {{ parent_directory(search-service-dst) }}
     sed 's|^Exec=.*|Exec={{bin-dst}} --search-provider|' {{ app-dir / 'resources' / 'search-provider.service' }} > {{search-service-dst}}
+    install -Dm0644 {{ app-dir / 'resources' / 'launcher-plugin.ron' }} {{ launcher-plugin-dst / 'plugin.ron' }}
+    printf '#!/bin/sh\nexec "%s" --launcher-plugin\n' {{bin-dst}} > {{ launcher-plugin-dst / launcher-script }}
+    chmod 0755 {{ launcher-plugin-dst / launcher-script }}
 
 # Uninstalls installed files
 uninstall:
     rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}} {{search-ini-dst}} {{search-service-dst}}
+    rm -rf {{launcher-plugin-dst}}
 
 # Per-user install (no sudo): ~/.local/bin, launcher entry, icon.
 # The desktop entry gets an absolute Exec so it works even if ~/.local/bin
@@ -99,15 +107,20 @@ install-user: build-release
     install -Dm0644 {{ app-dir / 'resources' / 'search-provider.ini' }} {{ user-base / 'share' / 'gnome-shell' / 'search-providers' / search-ini }}
     mkdir -p {{ user-base / 'share' / 'dbus-1' / 'services' }}
     sed 's|^Exec=.*|Exec={{ user-base / 'bin' / name }} --search-provider|' {{ app-dir / 'resources' / 'search-provider.service' }} > {{ user-base / 'share' / 'dbus-1' / 'services' / search-service }}
+    install -Dm0644 {{ app-dir / 'resources' / 'launcher-plugin.ron' }} {{ user-base / 'share' / 'pop-launcher' / 'plugins' / name / 'plugin.ron' }}
+    printf '#!/bin/sh\nexec "%s" --launcher-plugin\n' {{ user-base / 'bin' / name }} > {{ user-base / 'share' / 'pop-launcher' / 'plugins' / name / launcher-script }}
+    chmod 0755 {{ user-base / 'share' / 'pop-launcher' / 'plugins' / name / launcher-script }}
     -update-desktop-database {{ user-base / 'share' / 'applications' }}
     -gtk-update-icon-cache -q -t -f {{ user-base / 'share' / 'icons' / 'hicolor' }}
     @echo "Installed. Find Attic in the app library; right-click it in the dock to pin."
     @echo "On GNOME, notes appear in the Activities overview search after the next login (or a shell restart)."
+    @echo "On COSMIC, type 'note ' in the launcher (Super) to search your notes."
 
 # Removes the per-user install
 uninstall-user:
     rm -f {{ user-base / 'bin' / name }} {{ user-base / 'share' / 'applications' / desktop }} {{ user-base / 'share' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icon-svg }} {{ user-base / 'share' / 'metainfo' / appdata }}
     rm -f {{ user-base / 'share' / 'gnome-shell' / 'search-providers' / search-ini }} {{ user-base / 'share' / 'dbus-1' / 'services' / search-service }}
+    rm -rf {{ user-base / 'share' / 'pop-launcher' / 'plugins' / name }}
     -update-desktop-database {{ user-base / 'share' / 'applications' }}
 
 # Vendor dependencies locally
