@@ -932,7 +932,8 @@ impl cosmic::Application for AppModel {
                         menu::Item::Button(fl!("redo"), None, MenuAction::Redo),
                     ],
                 ),
-            ),
+            )
+            .width(200),
             menu::Tree::with_children(
                 menu::root(fl!("format")).apply(Element::from),
                 menu::items(
@@ -946,8 +947,18 @@ impl cosmic::Application for AppModel {
             menu::Tree::with_children(
                 menu::root(fl!("view")).apply(Element::from),
                 menu::items(&self.key_binds, view_items),
-            ),
-        ]);
+            )
+            .width(330),
+        ])
+        // libcosmic's defaults (uniform 150 px wide, 30 px tall items) clip
+        // the shortcuts and stretch the dividers into slabs. Dynamic height
+        // and 4 px spacing are what COSMIC's own apps use; the width is per
+        // menu (`Static` falls back to 260 where a tree sets none) so View,
+        // with "Keyboard shortcuts  Ctrl + Shift + H", gets the room it
+        // needs without Edit being that wide.
+        .item_height(menu::ItemHeight::Dynamic(40))
+        .item_width(menu::ItemWidth::Static(260))
+        .spacing(4.0);
 
         let toggle = |icon_name: &'static str, label: String, on: bool, msg: Message| {
             widget::tooltip(

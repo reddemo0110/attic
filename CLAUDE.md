@@ -37,6 +37,16 @@ Toolchain lives in `~/.cargo/bin` (rustup); make sure it's on `PATH`.
   fresh scratch notes dir (`JJB_NOTES_DIR`); pass `--notes-dir ~/Documents/Attic`
   only when the real notes are needed for the picture — steps like `new`/`type`/`attach` write files. Portal screenshots hang unattended, and the in-app `JJB_SCREENSHOT`
   hook (iced `window::screenshot`) silently drops editor text and menu labels.
+  For anything the script hook cannot reach (the menu bar, popovers, hover)
+  use `--nested 1600x1000`: the app runs in a private headless mutter with its
+  own Xwayland, and `--click X,Y` (window pixels, repeatable) / `--key KEYSYM`
+  drive it through mutter's virtual seat; popups in their own X window are
+  composited in. Use `--wait 9` there (the window is mapped late) and spend
+  the first click on an empty spot (`--click 1000,600`): the X11 window gets
+  focus and pointer only from a click, so the first one never reaches a widget.
+  Never inject input on the session's own display: on rootless Xwayland it
+  lands on the real desktop and the capture can include other apps' windows
+  (the tool refuses `--click` without `--nested` for that reason).
 
 libcosmic is pulled from git; its API moves. When in doubt, read the checkout
 under `~/.cargo/git/checkouts/libcosmic-*/` rather than trusting docs.

@@ -1260,3 +1260,28 @@ image breaks a heading mid-word when the column is under ~100 px.
   the way into the menu and should be discoverable. The hit area is gone
   with the glyph, which is fine because nobody can reach the corner
   without first hovering the card.
+
+## 2026-11-07 — The menu bar's dropdowns, and a way to see them
+- User: the menus "really don't look ok". Seen once captured: every
+  dropdown 150 px wide with the shortcuts ellipsised ("Ctrl + …ift + P"),
+  and each divider a 30 px grey slab. Cause: `menu::bar` was built with
+  libcosmic's defaults, `ItemWidth::Uniform(150)` and
+  `ItemHeight::Uniform(30)`; the uniform height stretches the thin divider
+  widget to a full row. Same on COSMIC, so not a GNOME paper cut.
+- Now `ItemHeight::Dynamic(40)`, 4 px spacing (what cosmic-edit and the
+  libcosmic menu example use) and `ItemWidth::Static(260)` with per-menu
+  widths: Edit 200, View 330 (its longest row is "Keyboard shortcuts
+  Ctrl + Shift + H"). Static over Uniform so Edit does not have to be as
+  wide as View.
+- Seeing it took a harness: the script hook cannot open a libcosmic menu
+  (its state is internal), and injecting pointer input on the session's
+  Xwayland is both unsafe (it lands on the real desktop) and, under
+  rootless Xwayland, the capture can pick up other clients' windows (it
+  did: a password manager; the picture was deleted on sight). `xshot.py
+  --nested WxH` now runs the app in a private headless mutter on a private
+  session bus; clicks go through `org.gnome.Mutter.RemoteDesktop` (XTEST
+  from Xwayland is ignored there), absolute motion anchored to a
+  `ScreenCast` stream of the virtual monitor that nobody consumes. Gotchas
+  recorded in CLAUDE.md: the app's X11 window gets focus and pointer only
+  from a click, so the first click is spent; the window maps late, so
+  `--wait 9`.
