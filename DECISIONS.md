@@ -1248,3 +1248,8 @@ image breaks a heading mid-word when the column is under ~100 px.
   the 720 px the treatments run on: with nothing to compute per pixel and
   a column wider than 720 logical px on a 2× display, the old cap would
   have shown a soft upscale.
+- Same evening: the user asked for plain to be what a dropped picture
+  gets. `import_image_at` (the one path for drag-and-drop, the dock's
+  picture button and the in-app picker) now inserts `{frame=plain}`
+  instead of the bare line. The format's default is still `box`, so this
+  is written out explicitly and older notes are untouched.

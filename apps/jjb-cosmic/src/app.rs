@@ -6438,11 +6438,14 @@ impl AppModel {
             .and_then(|s| s.to_str())
             .unwrap_or("image")
             .to_owned();
+        // New pictures arrive plain, across the text column; the retro
+        // frames are a choice made per picture in its menu. (`Box` stays
+        // the format's default so bare lines in older notes keep theirs.)
         let r = ImageRef {
             line: 0,
             alt,
             path: rel,
-            frame: FrameStyle::default(),
+            frame: FrameStyle::Plain,
             align: Align::default(),
             width: None,
         };
