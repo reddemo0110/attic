@@ -10,9 +10,22 @@ use std::path::{Path, PathBuf};
 pub const ASSETS_DIR: &str = "assets";
 /// Largest edge we keep for display; treatments run on this size.
 const DISPLAY_MAX: u32 = 720;
+/// The plain style has no treatment to pay for and fills the text column,
+/// so it keeps more of the picture.
+const PLAIN_DISPLAY_MAX: u32 = 1600;
+
+/// Largest edge kept for display under a style.
+pub fn display_max(style: FrameStyle) -> u32 {
+    match style {
+        FrameStyle::Plain => PLAIN_DISPLAY_MAX,
+        _ => DISPLAY_MAX,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum FrameStyle {
+    /// No treatment, no card: the picture as it is, across the text column.
+    Plain,
     #[default]
     Box,
     Tint,
@@ -26,7 +39,8 @@ pub enum FrameStyle {
 }
 
 impl FrameStyle {
-    pub const ALL: [FrameStyle; 9] = [
+    pub const ALL: [FrameStyle; 10] = [
+        FrameStyle::Plain,
         FrameStyle::Box,
         FrameStyle::Tint,
         FrameStyle::Dither,
@@ -40,6 +54,7 @@ impl FrameStyle {
 
     pub fn key(self) -> &'static str {
         match self {
+            FrameStyle::Plain => "plain",
             FrameStyle::Box => "box",
             FrameStyle::Tint => "tint",
             FrameStyle::Dither => "dither",
@@ -58,6 +73,7 @@ impl FrameStyle {
 
     pub fn label(self) -> &'static str {
         match self {
+            FrameStyle::Plain => "plain",
             FrameStyle::Box => "box frame",
             FrameStyle::Tint => "phosphor tint",
             FrameStyle::Dither => "dithered",
@@ -557,7 +573,7 @@ pub fn load_and_process(
 ) -> Result<Processed> {
     let img = image::open(path).with_context(|| format!("opening {}", path.display()))?;
     let (w, h) = (img.width(), img.height());
-    let scale = (DISPLAY_MAX as f32 / w.max(h) as f32).min(1.0);
+    let scale = (display_max(style) as f32 / w.max(h) as f32).min(1.0);
     let img = if scale < 1.0 {
         img.resize(
             (w as f32 * scale) as u32,
@@ -579,7 +595,7 @@ pub fn process(rgba: RgbaImage, style: FrameStyle, p: &Inks, ascii_cols: u32) ->
         FrameStyle::Bezel => scanlines(rgba),
         FrameStyle::Comic => comic(&rgba),
         FrameStyle::Ascii => return Processed::Ascii(ascii(&rgba, ascii_cols)),
-        FrameStyle::Box | FrameStyle::Print | FrameStyle::Film => rgba,
+        FrameStyle::Plain | FrameStyle::Box | FrameStyle::Print | FrameStyle::Film => rgba,
     };
     Processed::Pixels {
         width: out.width(),
@@ -789,6 +805,12 @@ mod tests {
         let new = replace_line(body, r.line, &r.to_markdown());
         assert!(new.contains("![sunset](assets/sunset.png){frame=tint}\n"));
         assert_eq!(new.lines().count(), body.lines().count());
+        // Plain is a style of its own, not the absence of one: it is written.
+        let plain = parse_line("![p](assets/p.jpg){frame=plain}").unwrap();
+        assert_eq!((plain.frame, plain.align, plain.width), (FrameStyle::Plain, Align::Center, None));
+        assert_eq!(plain.to_markdown(), "![p](assets/p.jpg){frame=plain}");
+        assert_eq!(display_max(FrameStyle::Plain), 1600);
+        assert_eq!(display_max(FrameStyle::Box), 720);
     }
 
     #[test]

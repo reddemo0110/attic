@@ -1711,7 +1711,15 @@ impl AppModel {
 
             Message::SetFrame(block, frame) => {
                 self.image_menu = None;
-                self.edit_ref(block, |r| r.frame = frame);
+                self.edit_ref(block, |r| {
+                    r.frame = frame;
+                    // Plain means the picture as it is, across the text
+                    // column: it drops any width or float it had.
+                    if frame == FrameStyle::Plain {
+                        r.width = None;
+                        r.align = Align::Center;
+                    }
+                });
             }
 
             Message::SetAlign(block, align) => {
@@ -6942,6 +6950,7 @@ impl AppModel {
                     .width(Length::Fill)
                     .content_fit(cosmic::iced::ContentFit::Contain);
                 match r.frame {
+                    FrameStyle::Plain => img.into(),
                     FrameStyle::Box => retro::frame_sized(
                         p,
                         if r.alt.trim().is_empty() {

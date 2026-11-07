@@ -1233,3 +1233,18 @@ image breaks a heading mid-word when the column is under ~100 px.
 - No accent set (portal reports out-of-range components) means leave
   libcosmic's default alone. The `gsettings` fallback does not map
   GNOME's accent names to colours; the portal is on every GNOME box.
+
+## 2026-11-07 — A plain image style
+- User: a style that "doesn't do any styling, just places the full image
+  which is the full width of the editor's text width". New `FrameStyle::Plain`
+  (`frame=plain`, first in the menu): no pixel treatment, no card at all,
+  the `widget::image` alone, which already fills the text column when the
+  reference has no `w=`. Choosing it in the ⋯ menu also clears the width
+  and float so the picture spans the column; the grip and width presets
+  still work afterwards for someone who wants it narrower.
+- `box` stays the default so every existing bare `![alt](path)` renders as
+  it did; plain is written out as `{frame=plain}`.
+- Plain keeps up to 1600 px on the long edge (`display_max`) instead of
+  the 720 px the treatments run on: with nothing to compute per pixel and
+  a column wider than 720 logical px on a 2× display, the old cap would
+  have shown a soft upscale.
