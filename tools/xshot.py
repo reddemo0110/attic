@@ -115,6 +115,11 @@ def main():
     bus_addr = None
     if args.nested:
         import glob, re, tempfile
+        # A run cut short (a timeout, Ctrl-C) can leave its mutter behind,
+        # spinning; they are all ours by name, so sweep before starting.
+        # (The bracket keeps the pattern from matching a shell that quotes it.)
+        subprocess.run(["pkill", "-9", "-f", "mutter --headles[s] .*--wayland-display xshot-"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         # A private session bus for mutter: its RemoteDesktop service is how
         # we move the pointer, and nothing of ours lands on the real one.
         bus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1"],
@@ -278,10 +283,17 @@ def main():
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+        # mutter does not go on SIGTERM once its Xwayland is gone (it spins
+        # on a core instead), so give it a moment and then make sure.
         for daemon in (mutter, bus):
-            if daemon is not None:
+            if daemon is None:
+                continue
+            try:
+                os.killpg(daemon.pid, 15)
+                daemon.wait(timeout=2)
+            except Exception:
                 try:
-                    os.killpg(daemon.pid, 15)
+                    os.killpg(daemon.pid, 9)
                 except Exception:
                     pass
 
