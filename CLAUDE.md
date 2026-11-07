@@ -160,6 +160,11 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
 
 ## Rules that matter
 
+- Every commit updates `CHANGELOG.md` under **Unreleased** (Added / Changed /
+  Fixed / For developers) in plain words for the person using the app, and
+  the commit body carries the same notes. The user asked for this on
+  2026-11-08 so the history reads as release notes. `DECISIONS.md` stays the
+  place for the reasoning.
 - Files on disk are the source of truth; `index.db` is derived and disposable.
   Never add state that lives only in SQLite (except the sync oplog).
 - Nothing from libcosmic, iced or zbus goes into `crates/jjb-core`; the
