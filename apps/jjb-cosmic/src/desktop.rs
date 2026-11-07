@@ -7,9 +7,12 @@
 //! falls back to "Open Sans", "Noto Sans Mono" and the "Cosmic" icon theme —
 //! none of which a GNOME machine has installed. On GNOME (and anything else
 //! that is not COSMIC) we ask the XDG desktop portal for the user's actual
-//! settings instead: interface and monospace font, icon theme, and which
-//! window buttons the shell shows. Dark/light and the accent colour already
-//! arrive through the portal via libcosmic itself.
+//! settings instead: interface and monospace font, icon theme, which
+//! window buttons the shell shows, and the accent colour. Dark/light and
+//! contrast arrive through the portal via libcosmic itself; the accent does
+//! not (libcosmic has a handler for it but never asks the portal), so the
+//! app reads `org.freedesktop.appearance accent-color` and rebuilds the
+//! system theme around it, see [`softened_theme`].
 //!
 //! The values are pushed into libcosmic's toolkit config (`COSMIC_TK`).
 //! libcosmic replaces that struct wholesale when its own config subscription
@@ -137,6 +140,9 @@ pub struct Settings {
     /// (GNOME's `button-layout`). `None` = unknown, keep the default.
     pub show_minimize: Option<bool>,
     pub show_maximize: Option<bool>,
+    /// The desktop's accent colour (`org.freedesktop.appearance
+    /// accent-color`), 8-bit sRGB. `None` when the desktop has none.
+    pub accent: Option<[u8; 3]>,
 }
 
 /// What the desktop last told us; `None` until first asked.
@@ -229,28 +235,47 @@ fn outline_colour(is_dark: bool) -> cosmic::cosmic_theme::palette::Srgba {
     }
 }
 
-/// How many times to soften one and the same system theme before giving
+/// How many times to fix up one and the same system theme before giving
 /// up on it. At start-up libcosmic installs the theme, replaces it when
 /// the portal reports the colour scheme and rebuilds it for the accent,
 /// each time dropping our divider; three attempts were seen to be needed
 /// before one stuck. Past this it would be a redraw loop, not a race.
 const OUTLINE_ATTEMPTS: u8 = 6;
-/// (is_dark, accent) of the theme last softened, and how often.
+/// (`is_dark`, accent) of the theme last fixed up, and how often.
 static OUTLINE_TRIES: Mutex<Option<((bool, [u8; 3]), u8)>> = Mutex::new(None);
 
-/// libcosmic draws the 1 px border around a floating window in the
-/// theme's `bg_divider`, which it composites to an opaque 20 % blend of
-/// the text colour: the hard grey line around the window next to GNOME's
-/// own, which have a faint translucent outline (and a shadow Mutter leaves
-/// to the client, which libcosmic cannot draw). The border is hard-wired
-/// in libcosmic's window layout, so the theme is the lever: the system
-/// theme with its divider softened to GNOME's, or `None` when there is
-/// nothing to do (on COSMIC, under a custom or high-contrast theme, or
-/// once it is already in place). libcosmic reinstalls a fresh system
-/// theme at start-up and on every dark/light or accent change, so the app
-/// checks [`outline_stale`] on each redraw and re-applies. The theme's
-/// colour fields are private; the change goes through its serde form.
-pub fn softened_theme() -> Option<cosmic::Theme> {
+type Srgba = cosmic::cosmic_theme::palette::Srgba;
+
+fn rgb8(c: Srgba) -> [u8; 3] {
+    let c = c.into_format::<u8, u8>();
+    [c.red, c.green, c.blue]
+}
+
+/// The accent the theme would carry once rebuilt around the desktop's:
+/// libcosmic keeps the theme's own accent lightness and takes hue and
+/// chroma from the desktop (`Theme::with_accent`), so a straight
+/// comparison with the portal colour would never settle. `None` when the
+/// desktop has no accent.
+fn wanted_accent(theme: &cosmic::cosmic_theme::Theme) -> Option<Srgba> {
+    use cosmic::cosmic_theme::palette::{IntoColor, Oklcha, Srgb};
+    let [r, g, b] = settings().accent?;
+    let desktop = Srgba::new(
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        1.0,
+    );
+    let mut oklcha: Oklcha = desktop.into_color();
+    let current: Oklcha = theme.accent_color().into_color();
+    oklcha.l = current.l;
+    let adjusted: Srgb = oklcha.into_color();
+    Some(Srgba::new(adjusted.red, adjusted.green, adjusted.blue, 1.0))
+}
+
+/// What the active system theme still lacks of the desktop's look, or
+/// `None` on COSMIC, under a custom or high-contrast theme, or once it is
+/// all in place: (the theme, needs the accent, needs the outline).
+fn fixups() -> Option<(cosmic::Theme, bool, bool)> {
     use cosmic::theme::ThemeType;
     if Desktop::current() == Desktop::Cosmic {
         return None;
@@ -263,12 +288,30 @@ pub fn softened_theme() -> Option<cosmic::Theme> {
         return None;
     }
     let theme = active.cosmic();
-    let wanted = outline_colour(theme.is_dark);
-    if theme.bg_divider() == wanted {
-        return None;
-    }
-    let accent = theme.accent_color().into_format::<u8, u8>();
-    let key = (theme.is_dark, [accent.red, accent.green, accent.blue]);
+    let accent = wanted_accent(theme).is_some_and(|c| rgb8(c) != rgb8(theme.accent_color()));
+    let outline = theme.bg_divider() != outline_colour(theme.is_dark);
+    (accent || outline).then_some((active, accent, outline))
+}
+
+/// libcosmic draws the 1 px border around a floating window in the
+/// theme's `bg_divider`, which it composites to an opaque 20 % blend of
+/// the text colour: the hard grey line around the window next to GNOME's
+/// own, which have a faint translucent outline (and a shadow Mutter leaves
+/// to the client, which libcosmic cannot draw). The border is hard-wired
+/// in libcosmic's window layout, so the theme is the lever: the system
+/// theme with its divider softened to GNOME's, and, since libcosmic never
+/// asks the portal for it, rebuilt around the desktop's accent colour
+/// (the menu bar, links, selection and the buffet's system palette all
+/// wear the accent). `None` when there is nothing to do (on COSMIC, under
+/// a custom or high-contrast theme, or once it is already in place).
+/// libcosmic reinstalls a fresh system theme at start-up and on every
+/// dark/light change, so the app checks [`outline_stale`] on each redraw
+/// and re-applies. The theme's colour fields are private; the divider
+/// goes through its serde form.
+pub fn softened_theme() -> Option<cosmic::Theme> {
+    let (active, fix_accent, fix_outline) = fixups()?;
+    let theme = active.cosmic();
+    let key = (theme.is_dark, rgb8(theme.accent_color()));
     {
         let mut tries = OUTLINE_TRIES.lock().unwrap();
         let n = match *tries {
@@ -280,6 +323,14 @@ pub fn softened_theme() -> Option<cosmic::Theme> {
         }
         *tries = Some((key, n + 1));
     }
+    let accented;
+    let theme = if fix_accent && let Some(accent) = wanted_accent(theme) {
+        accented = theme.with_accent(accent);
+        &accented
+    } else {
+        theme
+    };
+    let wanted = outline_colour(theme.is_dark);
     let softened = (|| -> serde_json::Result<cosmic::cosmic_theme::Theme> {
         let mut value = serde_json::to_value(theme)?;
         value["background"]["divider"] = serde_json::json!({
@@ -292,36 +343,29 @@ pub fn softened_theme() -> Option<cosmic::Theme> {
     })();
     match softened {
         Ok(softened) => {
-            tracing::info!(dark = theme.is_dark, "softening the window outline");
+            tracing::info!(
+                dark = theme.is_dark,
+                accent = fix_accent,
+                outline = fix_outline,
+                "fitting the system theme to the desktop"
+            );
             Some(cosmic::Theme::system(std::sync::Arc::new(softened)))
         }
         Err(err) => {
-            tracing::warn!(%err, "not softening the window outline");
+            tracing::warn!(%err, "not fitting the system theme to the desktop");
             None
         }
     }
 }
 
 /// Cheap enough for the event listener: does the active theme still
-/// carry libcosmic's outline?
+/// carry libcosmic's outline or its own accent?
 pub fn outline_stale() -> bool {
-    use cosmic::theme::ThemeType;
-    if Desktop::current() == Desktop::Cosmic {
+    let Some((active, ..)) = fixups() else {
         return false;
-    }
-    let active = cosmic::theme::active();
-    if !matches!(
-        active.theme_type,
-        ThemeType::System { .. } | ThemeType::Dark | ThemeType::Light
-    ) {
-        return false;
-    }
+    };
     let theme = active.cosmic();
-    if theme.bg_divider() == outline_colour(theme.is_dark) {
-        return false;
-    }
-    let accent = theme.accent_color().into_format::<u8, u8>();
-    let key = (theme.is_dark, [accent.red, accent.green, accent.blue]);
+    let key = (theme.is_dark, rgb8(theme.accent_color()));
     !matches!(*OUTLINE_TRIES.lock().unwrap(), Some((k, n)) if k == key && n >= OUTLINE_ATTEMPTS)
 }
 
@@ -392,7 +436,7 @@ async fn follow(
         };
         let ns: &str = args.namespace();
         tracing::debug!(ns, key = args.key(), "portal setting changed");
-        if ns != INTERFACE_NS && ns != WM_NS {
+        if ns != INTERFACE_NS && ns != WM_NS && ns != APPEARANCE_NS {
             continue;
         }
         // The signal carries the one key, but GNOME fires a burst of them
@@ -485,6 +529,19 @@ pub fn button_layout(layout: &str) -> (bool, bool) {
 
 const INTERFACE_NS: &str = "org.gnome.desktop.interface";
 const WM_NS: &str = "org.gnome.desktop.wm.preferences";
+/// The desktop-neutral namespace every portal backend serves: GNOME's
+/// accent (`slate`, `teal`, …) arrives as one `(ddd)` sRGB triple;
+/// out-of-range components mean "no accent set".
+const APPEARANCE_NS: &str = "org.freedesktop.appearance";
+
+/// The portal's `accent-color` as 8-bit sRGB, if the desktop has one.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // range-checked first
+pub fn accent_from(rgb: (f64, f64, f64)) -> Option<[u8; 3]> {
+    let (r, g, b) = rgb;
+    let in_range = |v: f64| (0.0..=1.0).contains(&v);
+    (in_range(r) && in_range(g) && in_range(b))
+        .then(|| [r, g, b].map(|v| (v * 255.0).round() as u8))
+}
 
 fn settings_from(interface: &HashMap<String, String>, wm: &HashMap<String, String>) -> Settings {
     let (show_minimize, show_maximize) = match wm.get("button-layout") {
@@ -505,11 +562,13 @@ fn settings_from(interface: &HashMap<String, String>, wm: &HashMap<String, Strin
             .filter(|t| !t.is_empty()),
         show_minimize,
         show_maximize,
+        accent: None,
     }
 }
 
-/// `org.freedesktop.portal.Settings.ReadAll` for the GNOME namespaces.
-/// xdg-desktop-portal-gtk / -gnome expose the gsettings keys one-to-one.
+/// `org.freedesktop.portal.Settings.ReadAll` for the GNOME namespaces
+/// and the portal's own appearance namespace. xdg-desktop-portal-gtk /
+/// -gnome expose the gsettings keys one-to-one.
 fn read_portal() -> Option<Settings> {
     use zbus::zvariant::OwnedValue;
     let conn = zbus::blocking::Connection::session().ok()?;
@@ -519,10 +578,15 @@ fn read_portal() -> Option<Settings> {
             "/org/freedesktop/portal/desktop",
             Some("org.freedesktop.portal.Settings"),
             "ReadAll",
-            &(&[INTERFACE_NS, WM_NS][..],),
+            &(&[INTERFACE_NS, WM_NS, APPEARANCE_NS][..],),
         )
         .ok()?;
     let all: HashMap<String, HashMap<String, OwnedValue>> = reply.body().deserialize().ok()?;
+    let accent = all
+        .get(APPEARANCE_NS)
+        .and_then(|m| m.get("accent-color"))
+        .and_then(|v| <(f64, f64, f64)>::try_from(v.clone()).ok())
+        .and_then(accent_from);
     let strings = |ns: &str| -> HashMap<String, String> {
         all.get(ns)
             .map(|m| {
@@ -539,10 +603,16 @@ fn read_portal() -> Option<Settings> {
     let interface = strings(INTERFACE_NS);
     if interface.is_empty() {
         // The portal answered but does not serve GNOME's namespaces (KDE,
-        // a bare compositor): nothing to borrow.
-        return None;
+        // a bare compositor): only the accent, if there is one, to borrow.
+        return accent.map(|a| Settings {
+            accent: Some(a),
+            ..Settings::default()
+        });
     }
-    Some(settings_from(&interface, &strings(WM_NS)))
+    Some(Settings {
+        accent,
+        ..settings_from(&interface, &strings(WM_NS))
+    })
 }
 
 /// Fallback when there is no portal on the bus: the `gsettings` tool.
@@ -649,6 +719,19 @@ mod tests {
         // A family that is itself a style word survives.
         assert_eq!(pango_family("Light 12").as_deref(), Some("Light"));
         assert_eq!(pango_family("   "), None);
+    }
+
+    #[test]
+    fn reads_accent_colour() {
+        // GNOME's "slate" as the portal reports it.
+        assert_eq!(
+            accent_from((0.435_294_1, 0.513_725_5, 0.588_235_3)),
+            Some([111, 131, 150])
+        );
+        assert_eq!(accent_from((0.0, 0.0, 0.0)), Some([0, 0, 0]));
+        // The portal's "no accent" is any component out of range.
+        assert_eq!(accent_from((-1.0, -1.0, -1.0)), None);
+        assert_eq!(accent_from((0.5, 1.5, 0.5)), None);
     }
 
     #[test]

@@ -93,7 +93,11 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   `reassert()` (called from the header/view because libcosmic overwrites
   that struct on its config update). `watch()` is the app subscription
   that follows the portal's `SettingChanged` (own thread + runtime) and
-  `apply()` adopts a change live, icon theme included. The ignored
+  `apply()` adopts a change live, icon theme included. The accent colour
+  (`org.freedesktop.appearance accent-color`) is read the same way, since
+  libcosmic never asks the portal for it; `softened_theme()` rebuilds the
+  system theme around it and GNOME's window outline whenever
+  `outline_stale()` finds libcosmic has installed a fresh one. The ignored
   `portal_signal_probe` test checks the signal path against a real session.
 - `src/launcher.rs` — `attic --launcher-plugin`: the COSMIC launcher
   (pop-launcher) plugin, the GNOME search provider's twin: JSON lines on

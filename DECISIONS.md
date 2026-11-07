@@ -1204,3 +1204,32 @@ image breaks a heading mid-word when the column is under ~100 px.
   xdg-decoration) and libcosmic / iced_winit have no shadow margin, so
   that one is out of reach without a different toolkit; recorded as the
   limit of the libcosmic shell on GNOME.
+
+## 2026-11-07 — The menu bar follows GNOME's accent colour
+- Reported on GNOME with the accent set to slate: the menu labels (File,
+  Edit, …) and header icons stayed COSMIC blue. libcosmic's `text_button`
+  component draws its text in the accent, and on GNOME the accent never
+  left COSMIC's default: libcosmic's portal subscription
+  (`theme/portal.rs`) reads the colour scheme and contrast and follows
+  their changes, but never asks for `accent-color`, even though
+  `Desktop::Accent` and its handler exist. Its `portal_accent` field is
+  `pub(super)`, so the app cannot feed it either.
+- Fix in the app, not a libcosmic fork: `desktop::read_portal` reads
+  `org.freedesktop.appearance` alongside the GNOME namespaces (and keeps
+  the accent alone where the GNOME namespaces are absent, so KDE's accent
+  comes along too); `watch()` follows that namespace's `SettingChanged`;
+  the outline fix-up grew into "fit the system theme to the desktop":
+  `softened_theme()` rebuilds the theme with `Theme::with_accent` first,
+  then softens the divider through serde as before, and `outline_stale()`
+  reports either lack. Same bounded retry counter, keyed on the theme's
+  own (dark, accent).
+- `with_accent` keeps the theme's accent *lightness* and takes hue and
+  chroma from the desktop, the way libcosmic applies the portal accent on
+  its own. Kept that behaviour rather than the raw GNOME colour: COSMIC's
+  dark theme wants a light accent for text on its dark chrome, and the
+  stale check compares against the same adjusted colour so it settles.
+  Slate on dark comes out as (171, 192, 213), near libadwaita's own
+  standalone slate; the portal's raw slate is (111, 131, 150).
+- No accent set (portal reports out-of-range components) means leave
+  libcosmic's default alone. The `gsettings` fallback does not map
+  GNOME's accent names to colours; the portal is on every GNOME box.
