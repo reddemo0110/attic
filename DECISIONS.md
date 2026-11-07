@@ -1253,3 +1253,10 @@ image breaks a heading mid-word when the column is under ~100 px.
   picture button and the in-app picker) now inserts `{frame=plain}`
   instead of the bare line. The format's default is still `box`, so this
   is written out explicitly and older notes are untouched.
+- Also that evening: the `◢` resize grip only shows while the pointer is
+  over the picture (`image_hover`, from the card's `mouse_area` enter /
+  exit) or a resize is in flight (`live_width` for that block, since the
+  pointer wanders off the card mid-drag). The `⋯` chip stays put: it is
+  the way into the menu and should be discoverable. The hit area is gone
+  with the glyph, which is fine because nobody can reach the corner
+  without first hovering the card.

@@ -93,6 +93,8 @@ pub struct AppModel {
     image_cache: HashMap<String, ImageState>,
     /// Block index of the image whose ⋯ menu is open.
     image_menu: Option<usize>,
+    /// Block index of the image under the pointer: its resize grip shows.
+    image_hover: Option<usize>,
     /// Where `[]` just became `- [ ] `: (block, line, column). The space
     /// a writer types next is the one the expansion already added.
     task_space: Option<(usize, usize, usize)>,
@@ -472,6 +474,8 @@ pub enum Message {
     Dropped(Option<UriList>),
     ImageLoaded(String, Result<Processed, String>),
     ImageMenu(Option<usize>),
+    /// The pointer entered (`Some`) or left (`None`) an image card.
+    ImageHover(Option<usize>),
     SetFrame(usize, FrameStyle),
     SetAlign(usize, Align),
     SetWidth(usize, Option<u32>),
@@ -696,6 +700,7 @@ impl cosmic::Application for AppModel {
             sync: sync_ui,
             image_cache: HashMap::new(),
             image_menu: None,
+            image_hover: None,
             task_space: None,
             resizing: None,
             table_edit: None,
@@ -1699,6 +1704,12 @@ impl AppModel {
                     Err(err) => ImageState::Failed(err),
                 };
                 self.image_cache.insert(key, state);
+            }
+
+            Message::ImageHover(block) => {
+                if block.is_some() || self.image_hover.is_some() {
+                    self.image_hover = block;
+                }
             }
 
             Message::ImageMenu(block) => {
@@ -7009,6 +7020,8 @@ impl AppModel {
         // Click the picture for the menu, drag it to move it; drag ◢ to resize.
         let clickable = widget::mouse_area(pic)
             .on_press(Message::ImagePress(block))
+            .on_enter(Message::ImageHover(Some(block)))
+            .on_exit(Message::ImageHover(None))
             .interaction(mouse::Interaction::Grab);
         let menu_open = self.image_menu == Some(block);
         let dots = widget::container(
@@ -7020,17 +7033,27 @@ impl AppModel {
         .width(Length::Fill)
         .align_x(Alignment::End)
         .padding([14, 6, 0, 0]);
-        let grip = widget::container(
-            widget::mouse_area(widget::container(retro::accent(p, "◢").size(13)).padding([0, 3]))
+        // The grip only shows while the pointer is over the picture (or a
+        // resize is under way, when the pointer may stray off it).
+        let resizing = self.live_width.is_some_and(|(b, _)| b == block);
+        let grip: Element<'a, Message> = if self.image_hover == Some(block) || resizing {
+            widget::container(
+                widget::mouse_area(
+                    widget::container(retro::accent(p, "◢").size(13)).padding([0, 3]),
+                )
                 .on_press(Message::ResizeStart(block))
                 .interaction(mouse::Interaction::ResizingHorizontally),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Alignment::End)
-        .align_y(Alignment::End)
-        .padding(2);
-        let stacked = cosmic::iced::widget::stack([clickable.into(), dots.into(), grip.into()])
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::End)
+            .align_y(Alignment::End)
+            .padding(2)
+            .into()
+        } else {
+            widget::Space::new().into()
+        };
+        let stacked = cosmic::iced::widget::stack([clickable.into(), dots.into(), grip])
             .width(Length::Fill);
 
         let sized = self.size_card(r, block, stacked.into());
