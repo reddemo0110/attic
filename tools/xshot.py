@@ -163,6 +163,11 @@ def main():
         args.notes_dir = tempfile.mkdtemp(prefix="jjb-notes-")
         log("scratch notes dir:", args.notes_dir)
     env["JJB_NOTES_DIR"] = args.notes_dir
+    # index.db lives under XDG_DATA_HOME and is shared by every instance:
+    # a run with its own notes dir must not reindex the real app's index
+    # out from under it (and vice versa), so give it its own.
+    import tempfile as _tempfile
+    env["XDG_DATA_HOME"] = _tempfile.mkdtemp(prefix="jjb-data-")
     env.setdefault("RUST_LOG", "attic=info,warn")
     # The app is single-instance: without this a real Attic already
     # running would be handed our launch and the scratch run would never

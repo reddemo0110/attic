@@ -1278,6 +1278,7 @@ impl cosmic::Application for AppModel {
         // ours; the redraw event does not reach subscriptions, so the next
         // message (start-up has plenty, and every pointer move is one)
         // puts the desktop's window outline back.
+        crate::desktop::set_chrome_dark(self.chrome_dark());
         if crate::desktop::outline_stale() {
             tasks.push(self.update_inner(Message::SoftenOutline));
         }
@@ -3514,7 +3515,7 @@ impl AppModel {
     fn install_icon(&self) {
         // Following the colour theme follows the buffet too when it is on.
         let palette = match self.icon_theme {
-            Some(theme) => theme.palette(self.core.system_theme()),
+            Some(theme) => theme.palette(&cosmic::theme::active()),
             None => self.palette(),
         };
         let svg = crate::icon::svg(&palette);
@@ -3581,6 +3582,18 @@ impl AppModel {
         }
     }
 
+    /// Which side the window chrome (header, menus, drawers) should be
+    /// on: the note theme's, or `None` to follow the desktop when the
+    /// theme is the one that does.
+    fn chrome_dark(&self) -> Option<bool> {
+        if !self.buffet_on && self.theme == retro::Theme::Cosmic {
+            return None;
+        }
+        let bg = self.palette().bg;
+        let luma = 0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b;
+        Some(luma < 0.5)
+    }
+
     fn palette(&self) -> Palette {
         if self.buffet_on {
             if self.buffet_light_mode {
@@ -3589,7 +3602,7 @@ impl AppModel {
                 retro::buffet_dark(self.buffet_accent(), self.buffet_dark)
             }
         } else {
-            self.theme.palette(self.core.system_theme())
+            self.theme.palette(&cosmic::theme::active())
         }
     }
 
@@ -4469,7 +4482,8 @@ impl AppModel {
     /// The theme picker shown in the context drawer.
     /// The Appearance drawer: Colour, Font and Size, each foldable.
     fn theme_picker(&self) -> Element<'_, Message> {
-        let system = self.core.system_theme();
+        let active = cosmic::theme::active();
+        let system = &active;
         let label_color: cosmic::iced::Color = system.cosmic().background(false).on.into();
         let header = |label: String, section: Section| {
             let open = self.appearance_open[section as usize];

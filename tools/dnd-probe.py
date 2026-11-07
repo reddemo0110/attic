@@ -68,6 +68,7 @@ try:
     photo = os.path.join(notes, "..", "probe-photo.png")
     shutil.copy(sys.argv[2], photo)
     env = dict(os.environ, WAYLAND_DISPLAY=name, JJB_NOTES_DIR=notes, COSMIC_SINGLE_INSTANCE="false",
+               XDG_DATA_HOME=tempfile.mkdtemp(prefix="probe-data-"),
                JJB_SCRIPT="wait:60000", RUST_LOG="attic=debug", WAYLAND_DEBUG="1")
     env.pop("DISPLAY", None)
     applog = open(f"{notes}/app.log", "wb")

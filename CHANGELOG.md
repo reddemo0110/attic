@@ -23,6 +23,13 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **COSMIC launcher plugin**: type `note ` in the launcher to search notes.
 
 ### Changed
+- The window chrome (header bar, menus, buttons, options drawer) follows
+  the note theme's side: pick a light theme and the chrome goes light too,
+  whatever the desktop is set to. The "follows your desktop" theme leaves
+  it to the desktop, as before.
+- With the "follows your desktop" theme, the note surface takes its
+  accent from the same theme as the chrome, so on GNOME it wears your
+  GNOME accent rather than COSMIC's cyan.
 - The menu bar's dropdowns are wide enough for their shortcuts, with thin
   dividers and proper spacing (they were cramped, with shortcuts cut short
   and dividers drawn as thick bars).

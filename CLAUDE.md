@@ -35,7 +35,7 @@ Toolchain lives in `~/.cargo/bin` (rustup); make sure it's on `PATH`.
   themes, theme, image, imgframe, imgalign, imgwidth, imgcaption, imgmenu, imgdrag, imgmove, linkdrag, fold, font, pairing, size, docksize, section, tagmenu, renametag, nav, togglebox, marker, measure, follow, icon, coffee, tagicon, pickdir, iconset, attach, tagdrag, tagmove, addspace, weight, fontfor, buffet, sel, sweep, cell, editcell, fpick, fpickover, pickdone, draft, fill, tsel, sync, syncnow, notesdir, key (`key:backspace`, `key:left:3`; backspace, delete, enter, tab, arrows, home, end), quit, wait, exit; `;` separates steps — write `\;` inside text; a `\n` in `type:` is a real Enter, so it continues lists like the keyboard does),
   and captures the window with X auto-repeat switched off. It runs against a
   fresh scratch notes dir (`JJB_NOTES_DIR`); pass `--notes-dir ~/Documents/Attic`
-  only when the real notes are needed for the picture — steps like `new`/`type`/`attach` write files. Portal screenshots hang unattended, and the in-app `JJB_SCREENSHOT`
+  only when the real notes are needed for the picture — steps like `new`/`type`/`attach` write files. Each run also gets its own `XDG_DATA_HOME` (a scratch `index.db`): the index is shared per data dir and the folder watcher re-indexes on change, so a run sharing the real one would empty the real app's list. Portal screenshots hang unattended, and the in-app `JJB_SCREENSHOT`
   hook (iced `window::screenshot`) silently drops editor text and menu labels.
   For anything the script hook cannot reach (the menu bar, popovers, hover)
   use `--nested 1600x1000`: the app runs in a private headless mutter with its
@@ -178,7 +178,10 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   (for files: a hash of the path, never the name).
 - Retro styling belongs to the editor surface and themes only. Chrome stays
   stock COSMIC (which, on GNOME, means stock libcosmic wearing GNOME's fonts
-  and icons — never GTK, never a second toolkit).
+  and icons — never GTK, never a second toolkit), but on the note theme's
+  side: a light theme means light chrome (`App::chrome_dark` →
+  `desktop::set_chrome_dark`; the "follows your desktop" theme hands the
+  choice back to the desktop).
 - Autosave is debounced (`AUTOSAVE_DELAY`); anything that switches or
   drops the current note must call `close_current()` / `flush()` first.
 - The script harness uses the real cosmic-config: a step that writes a

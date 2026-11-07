@@ -143,6 +143,9 @@ pub struct Settings {
     /// The desktop's accent colour (`org.freedesktop.appearance
     /// accent-color`), 8-bit sRGB. `None` when the desktop has none.
     pub accent: Option<[u8; 3]>,
+    /// The desktop's dark/light preference (`org.freedesktop.appearance
+    /// color-scheme`). `None` when it states none.
+    pub prefer_dark: Option<bool>,
 }
 
 /// What the desktop last told us; `None` until first asked.
@@ -235,14 +238,29 @@ fn outline_colour(is_dark: bool) -> cosmic::cosmic_theme::palette::Srgba {
     }
 }
 
-/// How many times to fix up one and the same system theme before giving
-/// up on it. At start-up libcosmic installs the theme, replaces it when
-/// the portal reports the colour scheme and rebuilds it for the accent,
-/// each time dropping our divider; three attempts were seen to be needed
+/// How many times to fix up one and the same theme before giving up on
+/// it. At start-up libcosmic installs the theme, replaces it when the
+/// portal reports the colour scheme and rebuilds it for the accent, each
+/// time dropping our changes; three attempts were seen to be needed
 /// before one stuck. Past this it would be a redraw loop, not a race.
 const OUTLINE_ATTEMPTS: u8 = 6;
 /// (`is_dark`, accent) of the theme last fixed up, and how often.
 static OUTLINE_TRIES: Mutex<Option<((bool, [u8; 3]), u8)>> = Mutex::new(None);
+
+/// What the app wants of the chrome: `Some(dark)` to match the note
+/// theme it is painting, `None` to follow the desktop. Set by the app on
+/// every update ([`set_chrome_dark`]).
+static CHROME_DARK: Mutex<Option<bool>> = Mutex::new(None);
+
+/// The theme we installed last, by pointer, so it can be told from a
+/// custom theme someone else set (which is left alone).
+static INSTALLED: Mutex<Option<usize>> = Mutex::new(None);
+
+/// Tell the chrome which side to be on: `Some(true)` dark, `Some(false)`
+/// light, `None` whatever the desktop prefers.
+pub fn set_chrome_dark(dark: Option<bool>) {
+    *CHROME_DARK.lock().unwrap() = dark;
+}
 
 type Srgba = cosmic::cosmic_theme::palette::Srgba;
 
@@ -255,9 +273,13 @@ fn rgb8(c: Srgba) -> [u8; 3] {
 /// libcosmic keeps the theme's own accent lightness and takes hue and
 /// chroma from the desktop (`Theme::with_accent`), so a straight
 /// comparison with the portal colour would never settle. `None` when the
-/// desktop has no accent.
+/// desktop has no accent, and always on COSMIC, where libcosmic's own
+/// theme already carries the user's accent.
 fn wanted_accent(theme: &cosmic::cosmic_theme::Theme) -> Option<Srgba> {
     use cosmic::cosmic_theme::palette::{IntoColor, Oklcha, Srgb};
+    if Desktop::current() == Desktop::Cosmic {
+        return None;
+    }
     let [r, g, b] = settings().accent?;
     let desktop = Srgba::new(
         f32::from(r) / 255.0,
@@ -272,46 +294,89 @@ fn wanted_accent(theme: &cosmic::cosmic_theme::Theme) -> Option<Srgba> {
     Some(Srgba::new(adjusted.red, adjusted.green, adjusted.blue, 1.0))
 }
 
-/// What the active system theme still lacks of the desktop's look, or
-/// `None` on COSMIC, under a custom or high-contrast theme, or once it is
-/// all in place: (the theme, needs the accent, needs the outline).
-fn fixups() -> Option<(cosmic::Theme, bool, bool)> {
-    use cosmic::theme::ThemeType;
+/// Which side the chrome should be on right now: the app's wish, else
+/// the desktop's preference (the portal on GNOME; on COSMIC libcosmic
+/// follows its own config, so `None`: nothing to enforce).
+fn wanted_dark() -> Option<bool> {
+    if let Some(dark) = *CHROME_DARK.lock().unwrap() {
+        return Some(dark);
+    }
     if Desktop::current() == Desktop::Cosmic {
         return None;
     }
+    settings().prefer_dark
+}
+
+/// What the active theme needs to become what the app and the desktop
+/// want.
+struct Fix {
+    active: cosmic::Theme,
+    /// Rebuild from the other side's system theme (`Some(dark)`).
+    mode: Option<bool>,
+    accent: bool,
+    outline: bool,
+    /// On COSMIC with the app back to following the desktop: give the
+    /// theme back to libcosmic, which manages it there.
+    hand_back: bool,
+}
+
+/// What the active theme still lacks, or `None` under a custom theme
+/// that is not ours, a high-contrast theme, or once it is all in place.
+fn fixups() -> Option<Fix> {
+    use cosmic::theme::ThemeType;
     let active = cosmic::theme::active();
-    if !matches!(
-        active.theme_type,
-        ThemeType::System { .. } | ThemeType::Dark | ThemeType::Light
-    ) {
+    let ours = match &active.theme_type {
+        ThemeType::Custom(t) => {
+            let ptr = std::sync::Arc::as_ptr(t) as usize;
+            *INSTALLED.lock().unwrap() == Some(ptr)
+        }
+        ThemeType::System { .. } | ThemeType::Dark | ThemeType::Light => false,
+        _ => return None,
+    };
+    if matches!(active.theme_type, ThemeType::Custom(_)) && !ours {
         return None;
     }
     let theme = active.cosmic();
-    let accent = wanted_accent(theme).is_some_and(|c| rgb8(c) != rgb8(theme.accent_color()));
-    let outline = theme.bg_divider() != outline_colour(theme.is_dark);
-    (accent || outline).then_some((active, accent, outline))
+    let on_cosmic = Desktop::current() == Desktop::Cosmic;
+    let mode = wanted_dark().filter(|d| *d != theme.is_dark);
+    let hand_back = on_cosmic && ours && CHROME_DARK.lock().unwrap().is_none();
+    let accent = !on_cosmic
+        && wanted_accent(theme).is_some_and(|c| rgb8(c) != rgb8(theme.accent_color()));
+    let outline = !on_cosmic && theme.bg_divider() != outline_colour(theme.is_dark);
+    (mode.is_some() || hand_back || accent || outline).then_some(Fix {
+        active,
+        mode,
+        accent,
+        outline,
+        hand_back,
+    })
 }
 
-/// libcosmic draws the 1 px border around a floating window in the
-/// theme's `bg_divider`, which it composites to an opaque 20 % blend of
-/// the text colour: the hard grey line around the window next to GNOME's
-/// own, which have a faint translucent outline (and a shadow Mutter leaves
-/// to the client, which libcosmic cannot draw). The border is hard-wired
-/// in libcosmic's window layout, so the theme is the lever: the system
-/// theme with its divider softened to GNOME's, and, since libcosmic never
-/// asks the portal for it, rebuilt around the desktop's accent colour
-/// (the menu bar, links, selection and the buffet's system palette all
-/// wear the accent). `None` when there is nothing to do (on COSMIC, under
-/// a custom or high-contrast theme, or once it is already in place).
-/// libcosmic reinstalls a fresh system theme at start-up and on every
-/// dark/light change, so the app checks [`outline_stale`] on each redraw
-/// and re-applies. The theme's colour fields are private; the divider
-/// goes through its serde form.
+/// The chrome theme the app wants installed, or `None` when the active
+/// one already is it.
+///
+/// Three things are fitted. The side: the chrome follows the note theme
+/// the app paints (light theme, light chrome), or the desktop when the
+/// app follows that, rebuilt from libcosmic's light or dark system theme
+/// (the user's own on COSMIC). Off COSMIC, two more: the accent colour,
+/// which libcosmic never asks the portal for, and the 1 px window border,
+/// which libcosmic draws in `bg_divider` composited to an opaque 20 %
+/// blend of the text colour (a hard grey line next to GNOME's faint
+/// translucent one; Mutter leaves the shadow to the client and libcosmic
+/// cannot draw it). The result is installed as a custom theme so
+/// libcosmic's own system-theme updates leave it alone; the desktop's
+/// dark/light and accent changes reach it through the portal watcher
+/// instead. The theme's colour fields are private; the divider goes
+/// through its serde form.
 pub fn softened_theme() -> Option<cosmic::Theme> {
-    let (active, fix_accent, fix_outline) = fixups()?;
-    let theme = active.cosmic();
-    let key = (theme.is_dark, rgb8(theme.accent_color()));
+    let fix = fixups()?;
+    if fix.hand_back && fix.mode.is_none() {
+        tracing::info!("handing the theme back to libcosmic");
+        *INSTALLED.lock().unwrap() = None;
+        return Some(cosmic::theme::system_preference());
+    }
+    let active_theme = fix.active.cosmic();
+    let key = (active_theme.is_dark, rgb8(active_theme.accent_color()));
     {
         let mut tries = OUTLINE_TRIES.lock().unwrap();
         let n = match *tries {
@@ -323,48 +388,91 @@ pub fn softened_theme() -> Option<cosmic::Theme> {
         }
         *tries = Some((key, n + 1));
     }
+    // The user's own light / dark theme on COSMIC; libcosmic's helpers
+    // fall back to a *dark* default when the config is missing (GNOME),
+    // so make sure the side is the one asked for.
+    let base = match fix.mode {
+        Some(dark) => {
+            let system = if dark {
+                cosmic::theme::system_dark()
+            } else {
+                cosmic::theme::system_light()
+            };
+            if system.cosmic().is_dark == dark {
+                system
+            } else if dark {
+                cosmic::Theme::custom(std::sync::Arc::new(
+                    cosmic::cosmic_theme::Theme::dark_default(),
+                ))
+            } else {
+                cosmic::Theme::custom(std::sync::Arc::new(
+                    cosmic::cosmic_theme::Theme::light_default(),
+                ))
+            }
+        }
+        None => fix.active.clone(),
+    };
+    let theme = base.cosmic();
     let accented;
-    let theme = if fix_accent && let Some(accent) = wanted_accent(theme) {
-        accented = theme.with_accent(accent);
+    let theme = if let Some(accent) = wanted_accent(theme).filter(|_| fix.accent || fix.mode.is_some()) {
+        // Not `Theme::with_accent`: that rebuilds from the COSMIC config's
+        // builder, and with no config (GNOME) the light one comes back
+        // dark. The plain builders are what the defaults are made from.
+        use cosmic::cosmic_theme::ThemeBuilder;
+        let builder = if theme.is_dark {
+            ThemeBuilder::dark()
+        } else {
+            ThemeBuilder::light()
+        };
+        accented = builder.accent(accent.color).build();
         &accented
     } else {
         theme
     };
+    let on_cosmic = Desktop::current() == Desktop::Cosmic;
     let wanted = outline_colour(theme.is_dark);
-    let softened = (|| -> serde_json::Result<cosmic::cosmic_theme::Theme> {
+    let rebuilt = (|| -> serde_json::Result<cosmic::cosmic_theme::Theme> {
         let mut value = serde_json::to_value(theme)?;
-        value["background"]["divider"] = serde_json::json!({
-            "red": wanted.red,
-            "green": wanted.green,
-            "blue": wanted.blue,
-            "alpha": wanted.alpha,
-        });
+        if !on_cosmic {
+            value["background"]["divider"] = serde_json::json!({
+                "red": wanted.red,
+                "green": wanted.green,
+                "blue": wanted.blue,
+                "alpha": wanted.alpha,
+            });
+        }
         serde_json::from_value(value)
     })();
-    match softened {
-        Ok(softened) => {
+    match rebuilt {
+        Ok(rebuilt) => {
             tracing::info!(
                 dark = theme.is_dark,
-                accent = fix_accent,
-                outline = fix_outline,
-                "fitting the system theme to the desktop"
+                side = ?fix.mode,
+                accent = fix.accent,
+                outline = fix.outline,
+                "fitting the chrome theme"
             );
-            Some(cosmic::Theme::system(std::sync::Arc::new(softened)))
+            let arc = std::sync::Arc::new(rebuilt);
+            *INSTALLED.lock().unwrap() = Some(std::sync::Arc::as_ptr(&arc) as usize);
+            Some(cosmic::Theme::custom(arc))
         }
         Err(err) => {
-            tracing::warn!(%err, "not fitting the system theme to the desktop");
+            tracing::warn!(%err, "not fitting the chrome theme");
             None
         }
     }
 }
 
-/// Cheap enough for the event listener: does the active theme still
-/// carry libcosmic's outline or its own accent?
+/// Cheap enough for the event listener: is the active theme not yet what
+/// the app and the desktop want?
 pub fn outline_stale() -> bool {
-    let Some((active, ..)) = fixups() else {
+    let Some(fix) = fixups() else {
         return false;
     };
-    let theme = active.cosmic();
+    if fix.hand_back && fix.mode.is_none() {
+        return true;
+    }
+    let theme = fix.active.cosmic();
     let key = (theme.is_dark, rgb8(theme.accent_color()));
     !matches!(*OUTLINE_TRIES.lock().unwrap(), Some((k, n)) if k == key && n >= OUTLINE_ATTEMPTS)
 }
@@ -563,6 +671,17 @@ fn settings_from(interface: &HashMap<String, String>, wm: &HashMap<String, Strin
         show_minimize,
         show_maximize,
         accent: None,
+        prefer_dark: None,
+    }
+}
+
+/// The portal's `color-scheme`: 1 prefers dark, 2 prefers light, 0 (or
+/// anything else) states no preference.
+pub fn color_scheme_from(value: u32) -> Option<bool> {
+    match value {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
     }
 }
 
@@ -587,6 +706,11 @@ fn read_portal() -> Option<Settings> {
         .and_then(|m| m.get("accent-color"))
         .and_then(|v| <(f64, f64, f64)>::try_from(v.clone()).ok())
         .and_then(accent_from);
+    let prefer_dark = all
+        .get(APPEARANCE_NS)
+        .and_then(|m| m.get("color-scheme"))
+        .and_then(|v| u32::try_from(v.clone()).ok())
+        .and_then(color_scheme_from);
     let strings = |ns: &str| -> HashMap<String, String> {
         all.get(ns)
             .map(|m| {
@@ -604,13 +728,15 @@ fn read_portal() -> Option<Settings> {
     if interface.is_empty() {
         // The portal answered but does not serve GNOME's namespaces (KDE,
         // a bare compositor): only the accent, if there is one, to borrow.
-        return accent.map(|a| Settings {
-            accent: Some(a),
+        return (accent.is_some() || prefer_dark.is_some()).then(|| Settings {
+            accent,
+            prefer_dark,
             ..Settings::default()
         });
     }
     Some(Settings {
         accent,
+        prefer_dark,
         ..settings_from(&interface, &strings(WM_NS))
     })
 }
@@ -636,7 +762,15 @@ fn read_gsettings() -> Settings {
     if let Some(v) = get(WM_NS, "button-layout") {
         wm.insert("button-layout".to_owned(), v);
     }
-    settings_from(&interface, &wm)
+    let prefer_dark = get(INTERFACE_NS, "color-scheme").and_then(|v| match v.trim_matches('\'') {
+        "prefer-dark" => Some(true),
+        "prefer-light" | "default" => Some(false),
+        _ => None,
+    });
+    Settings {
+        prefer_dark,
+        ..settings_from(&interface, &wm)
+    }
 }
 
 #[cfg(test)]
@@ -735,6 +869,13 @@ mod tests {
     }
 
     #[test]
+    fn reads_colour_scheme() {
+        assert_eq!(color_scheme_from(1), Some(true));
+        assert_eq!(color_scheme_from(2), Some(false));
+        assert_eq!(color_scheme_from(0), None);
+    }
+
+    #[test]
     fn reads_button_layout() {
         assert_eq!(
             button_layout("appmenu:minimize,maximize,close"),
@@ -760,3 +901,4 @@ mod tests {
         assert_eq!(s.show_maximize, Some(false));
     }
 }
+

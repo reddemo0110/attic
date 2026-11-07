@@ -1346,3 +1346,39 @@ image breaks a heading mid-word when the column is under ~100 px.
   line (`import-error`) instead of only in the log.
 - Not fixed in libcosmic itself: the default of preferring Move for a
   `dnd_destination_for_data` is a trap for any app that copies.
+
+
+## 2026-11-08 — The chrome takes the note theme's side
+- User, on a white theme with GNOME set to dark: the header, menus and
+  window buttons stayed dark. The chrome had followed the desktop's
+  dark/light alone. Now it follows the theme being painted: the app works
+  out the side from the palette's background luminance (`chrome_dark`),
+  `None` for the "follows your desktop" theme, and hands it to
+  `desktop::set_chrome_dark` on every update.
+- `desktop::softened_theme` grew from "outline + accent" into fitting the
+  whole chrome theme: the base is libcosmic's light or dark *system* theme
+  (the user's own on COSMIC, the default on GNOME), the accent and the
+  soft outline go on top off COSMIC, and the result is installed as a
+  `ThemeType::Custom` theme, remembered by pointer. Custom because
+  libcosmic's own system-theme handlers only replace System themes, so
+  they no longer fight ours; the desktop's dark/light and accent changes
+  reach the chrome through our portal watcher instead (`color-scheme`
+  joins `accent-color` in `Settings`). A custom theme that is not ours is
+  left alone. On COSMIC with the app back on the desktop-following theme,
+  the theme is handed back to libcosmic (`system_preference()`).
+- Rejected: using the note palette's colours for the chrome. The rule
+  stays "stock chrome"; only its side changes, so the menus still look
+  like the desktop's.
+- Two traps met on the way. `Theme::with_accent` rebuilds the theme from
+  the COSMIC config's builder, and with no config (GNOME) the light one
+  comes back *dark*; the accent is now applied with the plain
+  `ThemeBuilder::light()/dark()` the defaults are made from. And the
+  "follows your desktop" note palette read `core.system_theme()`,
+  libcosmic's own idea of the system theme (COSMIC's cyan accent), not
+  the chrome theme installed; it reads `theme::active()` now, so the note
+  surface and the chrome agree.
+- Harness: `index.db` is shared by every instance under `XDG_DATA_HOME`,
+  and the folder watcher re-indexes on change, so a scratch run and the
+  real app re-indexed each other's notes away (an empty list in one
+  capture). `xshot.py` and `dnd-probe.py` give each run its own
+  `XDG_DATA_HOME`.
