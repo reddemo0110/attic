@@ -47,6 +47,17 @@ Toolchain lives in `~/.cargo/bin` (rustup); make sure it's on `PATH`.
   Never inject input on the session's own display: on rootless Xwayland it
   lands on the real desktop and the capture can include other apps' windows
   (the tool refuses `--click` without `--nested` for that reason).
+  Drag-and-drop from a file manager: `tools/dnd-probe.py target/debug/attic
+  <file> 800 500 1200 650` runs the same private mutter with a GTK 4 drag
+  source (`tools/dnd-source.py`, copy/move/link/ask like Nautilus, deletes
+  the file after a move) and prints the source's events, the app's
+  `wl_data_*` protocol lines and the note's image lines. The seat needs a
+  keyboard before the app starts or the clipboard library never creates a
+  data device; the probe does that.
+- The DnD destination accepts Copy only (`.action(Copy)`,
+  `.preferred_action(Copy)`): libcosmic's default prefers Move, and a file
+  manager then deletes the original the moment the drop finishes, before
+  the copy into `assets/` has happened. Never advertise Move there.
 
 libcosmic is pulled from git; its API moves. When in doubt, read the checkout
 under `~/.cargo/git/checkouts/libcosmic-*/` rather than trusting docs.

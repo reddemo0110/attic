@@ -35,6 +35,7 @@ notes-count = { $count ->
    *[other] { $count } notes
 }
 store-error = Couldn't open the notes folder: { $error }
+import-error = Couldn't add { $file }: { $error }
 
 # Retro frames
 frame-views = views

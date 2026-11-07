@@ -1320,3 +1320,29 @@ image breaks a heading mid-word when the column is under ~100 px.
 - Not done: the PocketBase sync and a synced folder on the same notes
   are not stopped; they should not be combined. Dropbox's Linux client
   syncs dotfiles, so `.folders` and `.trash/` travel.
+
+## 2026-11-08 — Dropped pictures went missing: the drop was a move
+- User: dragging a picture in shows the drop line and then nothing. Could
+  not be reproduced with the script hook (it bypasses DnD), nor at first in
+  the nested-mutter harness: a drag from a small GTK 4 window (the new
+  `tools/dnd-probe.py` + `dnd-source.py`) worked. Two things had to be made
+  faithful. (1) smithay-clipboard only creates the seat's data device when
+  the seat gains a *keyboard* capability; the sandbox seat had only the
+  virtual pointer, so the app never received `wl_data_device.enter`. On a
+  real desktop both exist. (2) The source must offer what Nautilus offers,
+  copy / move / link / ask, and delete the file after a move.
+- With that, `WAYLAND_DEBUG=1` showed the app answering
+  `set_actions(copy|move, preferred move)`: libcosmic's `DndDestination`
+  defaults to `preferred_action: Move`, mutter picked Move, the source
+  reported "delete = True" and removed the original, and the app's copy
+  into `assets/` failed ("importing image err=copying …"), silently. On
+  the user's machine Nautilus is the source, so each dropped picture was
+  deleted from where it came from. The drop line the user saw is what the
+  editor shows while a drop is pending; with nothing inserted there was no
+  re-layout to replace it.
+- Fix: the destination advertises and prefers Copy only; the source keeps
+  its file and the copy succeeds (probe: "delete = False", the image line
+  is in the note). An import failure now also shows in the editor's status
+  line (`import-error`) instead of only in the log.
+- Not fixed in libcosmic itself: the default of preferring Move for a
+  `dnd_destination_for_data` is a trap for any app that copies.

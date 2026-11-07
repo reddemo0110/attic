@@ -4263,6 +4263,12 @@ impl AppModel {
             framed,
             |data, _action| Message::Dropped(data),
         )
+        // Copy, never move: the picture is copied into `assets/`, so the
+        // original must stay where it was. libcosmic's default prefers
+        // Move, and a file manager honours that by deleting the source the
+        // moment the drop completes, before the copy here has happened.
+        .action(cosmic::iced::clipboard::dnd::DndAction::Copy)
+        .preferred_action(cosmic::iced::clipboard::dnd::DndAction::Copy)
         .on_enter(|_, _, _| Message::DragEnter)
         .on_motion(|x, y| Message::DragMotion(x as f32, y as f32))
         .on_leave(|| Message::DragLeave)
@@ -6556,6 +6562,11 @@ impl AppModel {
             Ok(rel) => rel,
             Err(err) => {
                 tracing::error!(%err, "importing image");
+                self.save_error = Some(fl!(
+                    "import-error",
+                    file = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                    error = format!("{err:#}")
+                ));
                 return Task::none();
             }
         };
@@ -6611,6 +6622,11 @@ impl AppModel {
             Ok(rel) => rel,
             Err(err) => {
                 tracing::error!(%err, "attaching file");
+                self.save_error = Some(fl!(
+                    "import-error",
+                    file = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                    error = format!("{err:#}")
+                ));
                 return Task::none();
             }
         };
