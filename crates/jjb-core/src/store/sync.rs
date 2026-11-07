@@ -417,6 +417,20 @@ impl Store {
         self.index(&n, &note::content_hash(&text))
     }
 
+    /// The file for `id` as it is on disk right now, kept as a conflict
+    /// copy titled "… (conflict, `label`)": for an edit that arrived from
+    /// another machine while this one was still typing, before the typing
+    /// is written over it. `None` when the file is gone.
+    pub fn keep_disk_copy(&mut self, id: &str, label: &str) -> Result<Option<String>> {
+        let Some(row) = self.db.get(id)? else {
+            return Ok(None);
+        };
+        let Ok(text) = self.dir.read(&row.path) else {
+            return Ok(None);
+        };
+        self.write_conflict_copy(&text, row.trashed, label).map(Some)
+    }
+
     /// Keep `text` as a brand-new note titled "… (conflict, device)".
     fn write_conflict_copy(
         &mut self,

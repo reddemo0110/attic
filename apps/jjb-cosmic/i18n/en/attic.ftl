@@ -168,6 +168,7 @@ picker-home = Home
 picker-pictures = Pictures
 picker-downloads = Downloads
 picker-empty = No folders or images here.
+picker-empty-folders = No folders here.
 picker-grid = Grid
 picker-list = List
 badge-drop = drop to add
@@ -214,6 +215,17 @@ animation-hint = The drag drop line and friends. Time is the whole trip; landing
 anim-time = time
 anim-landing = landing
 anim-off = off
+
+# Options → Notes folder
+section-folder = Notes folder
+folder-hint = Every note, picture and attachment lives here as a plain file. Put this folder in Dropbox (or any synced folder) and choose the same folder on your other machines: changes show up here as they arrive.
+folder-choose = Choose folder…
+folder-default = Use the default
+folder-use-this = Use this folder
+pick-folder = Choose the notes folder
+picker-documents = Documents
+picker-dropbox = Dropbox
+other-device = another device
 
 # Options → Sync
 section-sync = Sync

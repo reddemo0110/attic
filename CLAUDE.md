@@ -32,7 +32,7 @@ Toolchain lives in `~/.cargo/bin` (rustup); make sure it's on `PATH`.
 - Visual check without a human: `tools/xshot.py out.png [--script ...]`
   runs the app on Xwayland (`XSHOT_LOG=path` keeps its log; the app is killed once the picture is taken, so for a check that needs it alive longer pass `--wait N`, a script `wait:` alone does not hold it), drives it via the `JJB_SCRIPT` hook (`step:arg` form, e.g. `--script 'new;type:Hello;wait:1000'`; steps:
   new, type, search, select, pin, trash, folder, format, selectall, dock,
-  themes, theme, image, imgframe, imgalign, imgwidth, imgcaption, imgmenu, imgdrag, imgmove, linkdrag, fold, font, pairing, size, docksize, section, tagmenu, renametag, nav, togglebox, marker, measure, follow, icon, coffee, tagicon, pickdir, iconset, attach, tagdrag, tagmove, addspace, weight, fontfor, buffet, sel, sweep, cell, editcell, fpick, fpickover, pickdone, draft, fill, tsel, sync, syncnow, key (`key:backspace`, `key:left:3`; backspace, delete, enter, tab, arrows, home, end), quit, wait, exit; `;` separates steps — write `\;` inside text; a `\n` in `type:` is a real Enter, so it continues lists like the keyboard does),
+  themes, theme, image, imgframe, imgalign, imgwidth, imgcaption, imgmenu, imgdrag, imgmove, linkdrag, fold, font, pairing, size, docksize, section, tagmenu, renametag, nav, togglebox, marker, measure, follow, icon, coffee, tagicon, pickdir, iconset, attach, tagdrag, tagmove, addspace, weight, fontfor, buffet, sel, sweep, cell, editcell, fpick, fpickover, pickdone, draft, fill, tsel, sync, syncnow, notesdir, key (`key:backspace`, `key:left:3`; backspace, delete, enter, tab, arrows, home, end), quit, wait, exit; `;` separates steps — write `\;` inside text; a `\n` in `type:` is a real Enter, so it continues lists like the keyboard does),
   and captures the window with X auto-repeat switched off. It runs against a
   fresh scratch notes dir (`JJB_NOTES_DIR`); pass `--notes-dir ~/Documents/Attic`
   only when the real notes are needed for the picture — steps like `new`/`type`/`attach` write files. Portal screenshots hang unattended, and the in-app `JJB_SCREENSHOT`
@@ -94,7 +94,17 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   through wasm-bindgen, JSON strings in and out; `tests/parity.rs`
   compares its output with the native scanner.
 - `src/config.rs` — cosmic-config entry (`notes_dir`, `device_id`); path
-  defaults come from the core's platform module.
+  defaults come from the core's platform module. `notes_dir` is chosen in
+  Options → Notes folder (the in-app picker in folder mode,
+  `picker_folders`); `App::switch_notes_dir` reopens the store there. "" means
+  the platform default.
+- `src/watch.rs` — the notes folder watched (`notify`, recursive, 500 ms
+  settle) for changes made by someone else: a sync client such as Dropbox
+  bringing another machine's edits. `App::external_change` re-indexes and
+  keeps the open note honest by the server sync's rules (edit beats delete;
+  both sides changed keeps the typing here and files the other version as
+  a conflict copy via `Store::keep_disk_copy`). Our own writes come through
+  it too, as a cheap no-op re-scan.
 - `src/desktop.rs` — which desktop we are on (`XDG_CURRENT_DESKTOP` and
   the older session variables; with none set, whoever owns
   `com.system76.CosmicSettingsDaemon` / `org.gnome.Shell` on the bus); off
@@ -155,6 +165,9 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   and icons — never GTK, never a second toolkit).
 - Autosave is debounced (`AUTOSAVE_DELAY`); anything that switches or
   drops the current note must call `close_current()` / `flush()` first.
+- The script harness uses the real cosmic-config: a step that writes a
+  setting (`notesdir`) needs `XDG_CONFIG_HOME` pointed at a scratch dir or
+  it changes the user's real app.
 - Sync never clobbers: both-sides-changed becomes a conflict copy, edit
   beats delete, the open note auto-updates to the server version; a
   different file of the same name makes the local one step aside

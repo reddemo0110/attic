@@ -13,7 +13,8 @@ cd attic && ./install.sh
 ```
 
 Re-run it after a `git pull` to update. Your notes live in
-`~/Documents/Attic` as plain markdown files.
+`~/Documents/Attic` as plain markdown files (Options → Notes folder moves
+them; a Dropbox folder chosen on every machine keeps them in step).
 
 A [justfile](./justfile) is included by default for the [casey/just][just] command runner.
 

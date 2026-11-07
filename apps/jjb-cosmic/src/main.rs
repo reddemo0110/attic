@@ -19,6 +19,7 @@ mod probe;
 mod retro;
 mod search_provider;
 mod secrets;
+mod watch;
 
 // The core's modules keep their old `crate::` paths inside this crate.
 use jjb_core::{links, note, store, sync, table};

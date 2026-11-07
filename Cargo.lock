@@ -484,6 +484,7 @@ dependencies = [
  "image",
  "jjb-core",
  "libcosmic",
+ "notify",
  "open",
  "rust-embed",
  "serde",

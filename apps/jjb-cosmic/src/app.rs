@@ -86,7 +86,7 @@ pub struct AppModel {
     /// Launcher icon: a theme's colours, or `None` to follow the theme.
     icon_theme: Option<retro::Theme>,
     /// Which sections of the Appearance drawer are unfolded.
-    appearance_open: [bool; 9],
+    appearance_open: [bool; 10],
     /// Cloud sync: the account, the form, and the cycle in flight.
     sync: SyncUi,
     /// Processed images keyed by path|mtime|style|theme.
@@ -178,6 +178,8 @@ pub struct AppModel {
     picker_grid: bool,
     /// The picker is attaching any file, not just pictures.
     picker_files: bool,
+    /// The picker is choosing the notes folder (Options → Notes folder).
+    picker_folders: bool,
     /// Web link previews by address (fetched, cached or failed).
     previews: HashMap<String, PreviewState>,
     /// Which link card has its ⋯ menu open.
@@ -467,6 +469,13 @@ pub enum Message {
     /// A picker thumbnail finished decoding.
     ThumbLoaded(PathBuf, Result<(u32, u32, Vec<u8>), String>),
     PickerToggleView,
+    /// Options → Notes folder → Choose: the picker in folder mode.
+    PickNotesDir,
+    /// Keep notes in this folder from now on (reopens the store).
+    UseNotesDir(PathBuf),
+    /// Files in the notes folder changed underneath us (Dropbox bringing
+    /// another machine's edits, any other editor): what the watcher saw.
+    NotesChanged(Vec<PathBuf>),
     DragEnter,
     DragLeave,
     /// A file drag moved over the editor (window coordinates).
@@ -696,7 +705,7 @@ impl cosmic::Application for AppModel {
             task_marker,
             measure,
             icon_theme,
-            appearance_open: [false; 9],
+            appearance_open: [false; 10],
             sync: sync_ui,
             image_cache: HashMap::new(),
             image_menu: None,
@@ -745,6 +754,7 @@ impl cosmic::Application for AppModel {
             thumbs: HashMap::new(),
             picker_grid: true,
             picker_files: false,
+            picker_folders: false,
             previews: HashMap::new(),
             link_menu: None,
             link_previews,
@@ -1063,7 +1073,11 @@ impl cosmic::Application for AppModel {
                 self.file_picker(),
                 Message::ToggleContextPage(ContextPage::Picker),
             )
-            .title(fl!("pick-image")),
+            .title(if self.picker_folders {
+                fl!("pick-folder")
+            } else {
+                fl!("pick-image")
+            }),
         })
     }
 
@@ -1244,6 +1258,14 @@ impl cosmic::Application for AppModel {
 
         subscriptions.push(crate::desktop::watch().map(Message::DesktopSettings));
 
+        // Another machine's edits arrive through Dropbox (or any sync
+        // client) as plain file changes: follow them while we run.
+        if let Some(store) = &self.store {
+            subscriptions.push(
+                crate::watch::notes_dir(store.notes_dir().to_owned()).map(Message::NotesChanged),
+            );
+        }
+
         Subscription::batch(subscriptions)
     }
 
@@ -1308,11 +1330,37 @@ impl AppModel {
                     return Task::none();
                 }
                 self.picker_files = matches!(message, Message::PickFile);
+                self.picker_folders = false;
                 self.picker_entries =
                     images::list_dir_filtered(&self.picker_dir, self.picker_files);
                 self.context_page = ContextPage::Picker;
                 self.core.window.show_context = true;
                 return self.load_thumbs();
+            }
+
+            Message::PickNotesDir => {
+                self.picker_files = false;
+                self.picker_folders = true;
+                self.picker_grid = false;
+                self.picker_dir = self
+                    .store
+                    .as_ref()
+                    .map_or_else(|| self.config.notes_dir(), |s| s.notes_dir().to_owned());
+                self.picker_entries = images::list_dir_filtered(&self.picker_dir, false);
+                self.context_page = ContextPage::Picker;
+                self.core.window.show_context = true;
+            }
+
+            Message::UseNotesDir(dir) => {
+                self.core.window.show_context = false;
+                self.picker_folders = false;
+                self.switch_notes_dir(dir);
+                return self.update_title();
+            }
+
+            Message::NotesChanged(paths) => {
+                self.external_change(&paths);
+                return self.update_title();
             }
 
             Message::PickerNavigate(dir) => {
@@ -5102,6 +5150,16 @@ impl AppModel {
             col = col.push(widget::text::caption(fl!("attach-hint")));
         }
 
+        // Notes folder: where the files live; a synced folder is the
+        // simple way to have the notes on every machine.
+        col = col.push(
+            widget::container(header(fl!("section-folder"), Section::Folder))
+                .padding([8, 0, 0, 0]),
+        );
+        if self.appearance_open[Section::Folder as usize] {
+            col = col.push(self.folder_section());
+        }
+
         // Sync: the account on a self-hosted server.
         col = col.push(
             widget::container(header(fl!("section-sync"), Section::Sync)).padding([8, 0, 0, 0]),
@@ -5464,19 +5522,40 @@ impl AppModel {
             .width(Length::Fill);
 
         let mut places = widget::row::with_capacity(3).spacing(6);
-        for (icon_name, label, dir) in [
-            ("user-home-symbolic", fl!("picker-home"), dirs::home_dir()),
-            (
-                "folder-pictures-symbolic",
-                fl!("picker-pictures"),
-                dirs::picture_dir(),
-            ),
-            (
-                "folder-download-symbolic",
-                fl!("picker-downloads"),
-                dirs::download_dir(),
-            ),
-        ] {
+        let shortcuts: Vec<(&str, String, Option<PathBuf>)> = if self.picker_folders {
+            // Where a notes folder tends to live: home, Documents, and the
+            // Dropbox folder when there is one.
+            vec![
+                ("user-home-symbolic", fl!("picker-home"), dirs::home_dir()),
+                (
+                    "folder-documents-symbolic",
+                    fl!("picker-documents"),
+                    dirs::document_dir(),
+                ),
+                (
+                    "folder-remote-symbolic",
+                    fl!("picker-dropbox"),
+                    dirs::home_dir()
+                        .map(|h| h.join("Dropbox"))
+                        .filter(|d| d.is_dir()),
+                ),
+            ]
+        } else {
+            vec![
+                ("user-home-symbolic", fl!("picker-home"), dirs::home_dir()),
+                (
+                    "folder-pictures-symbolic",
+                    fl!("picker-pictures"),
+                    dirs::picture_dir(),
+                ),
+                (
+                    "folder-download-symbolic",
+                    fl!("picker-downloads"),
+                    dirs::download_dir(),
+                ),
+            ]
+        };
+        for (icon_name, label, dir) in shortcuts {
             if let Some(dir) = dir {
                 places = places.push(
                     widget::button::text(label)
@@ -5486,29 +5565,50 @@ impl AppModel {
             }
         }
         col = col.push(places);
-        // Grid or list toggle beside the path.
-        col = col.push(
-            widget::row::with_capacity(2)
-                .push(
-                    widget::text::caption(self.picker_dir.display().to_string())
-                        .width(Length::Fill),
-                )
-                .push(
-                    widget::button::text(if self.picker_grid {
-                        fl!("picker-list")
-                    } else {
-                        fl!("picker-grid")
-                    })
-                    .on_press(Message::PickerToggleView),
-                )
-                .align_y(Alignment::Center)
-                .spacing(8),
-        );
-        if self.picker_entries.is_empty() {
+        if self.picker_folders {
+            // The folder being looked at is the one on offer.
+            col = col.push(
+                widget::row::with_capacity(2)
+                    .push(
+                        widget::text::caption(self.picker_dir.display().to_string())
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        widget::button::suggested(fl!("folder-use-this"))
+                            .on_press(Message::UseNotesDir(self.picker_dir.clone())),
+                    )
+                    .align_y(Alignment::Center)
+                    .spacing(8),
+            );
+        } else {
+            // Grid or list toggle beside the path.
+            col = col.push(
+                widget::row::with_capacity(2)
+                    .push(
+                        widget::text::caption(self.picker_dir.display().to_string())
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        widget::button::text(if self.picker_grid {
+                            fl!("picker-list")
+                        } else {
+                            fl!("picker-grid")
+                        })
+                        .on_press(Message::PickerToggleView),
+                    )
+                    .align_y(Alignment::Center)
+                    .spacing(8),
+            );
+        }
+        if self.picker_folders {
+            if !self.picker_entries.iter().any(|e| e.is_dir) {
+                col = col.push(widget::text::caption(fl!("picker-empty-folders")));
+            }
+        } else if self.picker_entries.is_empty() {
             col = col.push(widget::text::caption(fl!("picker-empty")));
         }
 
-        if self.picker_grid {
+        if self.picker_grid && !self.picker_folders {
             // Folders as chips, then a grid of thumbnails.
             let mut folders: Vec<Element<'_, Message>> = Vec::new();
             if let Some(parent) = self.picker_dir.parent() {
@@ -5601,7 +5701,11 @@ impl AppModel {
                 .on_press(Message::PickerNavigate(parent.to_owned())),
             );
         }
-        for entry in &self.picker_entries {
+        for entry in self
+            .picker_entries
+            .iter()
+            .filter(|e| e.is_dir || !self.picker_folders)
+        {
             let icon_name = if entry.is_dir {
                 "folder-symbolic"
             } else if images::is_image_file(&entry.path) {
@@ -7267,6 +7371,167 @@ impl AppModel {
     }
 
     /// Tags or trash membership may have changed: rebuild nav + list.
+    /// Options → Notes folder: where the files live, and the way to move.
+    fn folder_section(&self) -> Element<'_, Message> {
+        let current = self
+            .store
+            .as_ref()
+            .map_or_else(|| self.config.notes_dir(), |s| s.notes_dir().to_owned());
+        let default = jjb_core::platform::notes_dir("");
+        let mut col = widget::column::with_capacity(4).spacing(8);
+        col = col.push(widget::text::body(current.display().to_string()));
+        if let Some(err) = &self.store_error {
+            col = col.push(widget::text::caption(fl!("store-error", error = err.as_str())));
+        }
+        col = col.push(widget::text::caption(fl!("folder-hint")));
+        let mut row = widget::row::with_capacity(2).spacing(8).push(
+            widget::button::suggested(fl!("folder-choose")).on_press(Message::PickNotesDir),
+        );
+        if current != default {
+            row = row.push(
+                widget::button::standard(fl!("folder-default"))
+                    .on_press(Message::UseNotesDir(default)),
+            );
+        }
+        col.push(row).into()
+    }
+
+    /// Keep notes in `dir` from now on: write the choice down, reopen the
+    /// store there and start afresh in the editor. The index is shared,
+    /// so the reopen re-scans and the old folder's rows fall away.
+    fn switch_notes_dir(&mut self, dir: PathBuf) {
+        let dir = if dir.as_os_str().is_empty() {
+            jjb_core::platform::notes_dir("")
+        } else {
+            dir
+        };
+        if self.store.as_ref().is_some_and(|s| s.notes_dir() == dir) {
+            return;
+        }
+        self.close_current();
+        self.current = None;
+        self.blocks = Blocks::default();
+        self.backlinks.clear();
+        self.undo.clear();
+        self.redo.clear();
+        self.image_cache.clear();
+        self.query.clear();
+        self.view = View::All;
+        // The default is stored as "", so it follows the platform's idea
+        // of Documents rather than a path frozen on one machine.
+        let stored = if dir == jjb_core::platform::notes_dir("") {
+            String::new()
+        } else {
+            dir.to_string_lossy().into_owned()
+        };
+        if let Some(handler) = &self.config_handler
+            && let Err(why) = self.config.set_notes_dir(handler, stored.clone())
+        {
+            tracing::warn!(%why, "saving the notes folder");
+        }
+        self.config.notes_dir = stored;
+        match Store::open(
+            dir.clone(),
+            &Config::index_path(Self::APP_ID),
+            self.config.device_id.clone(),
+        ) {
+            Ok(store) => {
+                tracing::info!(dir = %dir.display(), "notes folder changed");
+                self.store = Some(store);
+                self.store_error = None;
+            }
+            Err(err) => {
+                tracing::error!(%err, dir = %dir.display(), "opening the notes folder");
+                self.store = None;
+                self.store_error = Some(format!("{err:#}"));
+            }
+        }
+        self.after_store_change();
+    }
+
+    /// Files in the notes folder changed without us: a sync client such
+    /// as Dropbox bringing another machine's edits, or any other editor.
+    /// Bring the index in line and keep the open note honest, by the
+    /// server sync's rules: edit beats delete, and a note changed on both
+    /// sides keeps the typing here while the other version is filed as a
+    /// conflict copy. Our own writes come through here too and cost one
+    /// cheap re-scan that finds nothing changed.
+    fn external_change(&mut self, paths: &[PathBuf]) {
+        let folders_touched = paths
+            .iter()
+            .any(|p| p.file_name().is_some_and(|n| n == ".folders"));
+        let (changed, folders_changed) = {
+            let Some(store) = self.store.as_mut() else {
+                return;
+            };
+            let folders_changed = folders_touched && store.reload_folders();
+            let changed = match store.reindex() {
+                Ok(n) => n,
+                Err(err) => {
+                    tracing::warn!(%err, "re-reading the notes folder");
+                    0
+                }
+            };
+            (changed, folders_changed)
+        };
+        if changed == 0 && !folders_changed {
+            return;
+        }
+        tracing::info!(changed, folders_changed, "the notes folder changed outside the app");
+        if let Some(cur) = self.current.clone() {
+            let on_disk = self
+                .store
+                .as_mut()
+                .and_then(|s| s.load(&cur.id).ok().flatten());
+            match on_disk {
+                // Trashed or deleted elsewhere. With nothing pending here,
+                // let it go; with typing pending the edit wins, and the
+                // next flush writes the file back.
+                None => {
+                    if !self.dirty {
+                        self.current = None;
+                        self.blocks = Blocks::default();
+                        self.backlinks.clear();
+                    }
+                }
+                Some(disk)
+                    if disk.body != cur.body
+                        || disk.trashed != cur.trashed
+                        || disk.path != cur.path =>
+                {
+                    if self.dirty {
+                        // Both sides changed: what is being typed here
+                        // stays open; the other machine's version is kept
+                        // beside it, then ours goes over the file.
+                        self.commit_table_edit();
+                        if let Some(store) = self.store.as_mut() {
+                            match store.keep_disk_copy(&cur.id, &fl!("other-device")) {
+                                Ok(Some(copy)) => {
+                                    tracing::info!(id = cur.id, copy, "kept the other version as a conflict copy");
+                                }
+                                Ok(None) => {}
+                                Err(err) => {
+                                    tracing::warn!(%err, "keeping the other machine's version");
+                                }
+                            }
+                        }
+                        if let Some(n) = self.current.as_mut() {
+                            n.path = disk.path;
+                            n.trashed = disk.trashed;
+                            n.modified = disk.modified;
+                        }
+                        self.flush();
+                    } else {
+                        // The open note follows the other machine.
+                        self.open_note(&cur.id);
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+        self.after_store_change();
+    }
+
     fn after_store_change(&mut self) {
         self.sync_soon();
         self.refresh_tags();
@@ -7457,6 +7722,7 @@ impl AppModel {
             Step::Pick => self.update(Message::PickImage),
             Step::Attach(path) => self.import_file_at(std::path::Path::new(&path), None),
             Step::PickDir(dir) => self.update(Message::PickerNavigate(PathBuf::from(dir))),
+            Step::NotesDir(dir) => self.update(Message::UseNotesDir(PathBuf::from(dir))),
             Step::ImgFrame(n, key) => match (self.nth_image_block(n), FrameStyle::from_key(&key)) {
                 (Some(b), Some(f)) => self.update(Message::SetFrame(b, f)),
                 _ => Task::none(),
@@ -7931,6 +8197,7 @@ pub enum Section {
     Buffet = 6,
     Tables = 7,
     Sync = 8,
+    Folder = 9,
 }
 
 /// Is `line[ws..we]` wrapped in `format`'s markers? Star formats count the

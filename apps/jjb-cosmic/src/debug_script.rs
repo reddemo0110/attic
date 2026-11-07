@@ -46,6 +46,8 @@ pub enum Step {
     Pick,
     /// Point the picker at a folder: `pickdir:/path`.
     PickDir(String),
+    /// Keep notes in this folder from now on: `notesdir:/path`.
+    NotesDir(String),
     /// Set the frame style of the n-th image: `imgframe:n:key`.
     ImgFrame(usize, String),
     /// Set alignment of the n-th image: `imgalign:n:left|center|right`.
@@ -186,6 +188,7 @@ pub fn parse(script: &str) -> Vec<Step> {
                 "image" => Step::Image(unescape(arg)),
                 "pick" => Step::Pick,
                 "pickdir" => Step::PickDir(unescape(arg)),
+                "notesdir" => Step::NotesDir(unescape(arg)),
                 "imgframe" => {
                     let (n, key) = arg.trim().split_once(':')?;
                     Step::ImgFrame(n.parse().ok()?, key.to_owned())

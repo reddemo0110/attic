@@ -160,11 +160,28 @@ impl Store {
         }
         for (path, known) in &indexed {
             if !seen.contains(path) {
-                self.db.remove(&known.id)?;
+                // A note renamed elsewhere (another machine, through a
+                // sync client) was just indexed under its new name with
+                // the same id; only a note that is really gone goes.
+                let moved = self.db.get(&known.id)?.is_some_and(|row| row.path != *path);
+                if !moved {
+                    self.db.remove(&known.id)?;
+                }
                 changed += 1;
             }
         }
         Ok(changed)
+    }
+
+    /// Re-read `.folders` after someone else wrote it (a sync client
+    /// bringing another machine's list). Whether it differed.
+    pub fn reload_folders(&mut self) -> bool {
+        let fresh = read_folders(&self.dir.root().join(FOLDERS_FILE));
+        if fresh == self.folders {
+            return false;
+        }
+        self.folders = fresh;
+        true
     }
 
     /// Parse a file and (re)write its index row. Files without an id get one
@@ -718,5 +735,27 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(store.reindex().unwrap(), 1);
         assert!(store.load(&ext.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn reindex_follows_a_rename_and_reloads_folders() {
+        let (mut store, _tmp) = temp_store();
+        let mut n = store.create().unwrap();
+        n.body = "# Kyoto\n\nnight one\n".into();
+        store.save(&mut n).unwrap();
+        let old = store.notes_dir().join(&n.path);
+        let new = store.notes_dir().join("Kyoto, night one.md");
+        let before = store.list(&View::All).unwrap().len();
+        // Another machine renamed the file; Dropbox replays the rename here.
+        std::fs::rename(&old, &new).unwrap();
+        store.reindex().unwrap();
+        let again = store.load(&n.id).unwrap().expect("same id, new name");
+        assert_eq!(again.path, new);
+        assert_eq!(store.list(&View::All).unwrap().len(), before);
+
+        std::fs::write(store.notes_dir().join(".folders"), "travel\nfood\n").unwrap();
+        assert!(store.reload_folders());
+        assert_eq!(store.folders(), ["food", "travel"]);
+        assert!(!store.reload_folders());
     }
 }

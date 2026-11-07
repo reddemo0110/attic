@@ -38,6 +38,9 @@ serde_json.workspace = true
 # portal Settings reads (fonts, icon theme, button layout) speak D-Bus
 # directly. Same zbus libcosmic already builds.
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+# The notes folder watched for another machine's changes (Dropbox and the
+# like). Same notify cosmic-config already builds.
+notify = "8"
 
 [build-dependencies]
 xdgen = "0.1"

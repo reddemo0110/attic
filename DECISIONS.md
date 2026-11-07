@@ -1285,3 +1285,38 @@ image breaks a heading mid-word when the column is under ~100 px.
   recorded in CLAUDE.md: the app's X11 window gets focus and pointer only
   from a click, so the first click is spent; the window maps late, so
   `--wait 9`.
+
+## 2026-11-07 — Dropbox as the sync: a chosen notes folder, watched
+- The user is moving to Dropbox on every Linux machine and asked whether
+  pointing the app at a synced folder would do as cloud sync. It does,
+  and it is what "files on disk are the source of truth" was for: notes,
+  `assets/`, `.trash/` and `.folders` all live in the one folder, and the
+  index is per machine outside it. Two things were missing.
+- **Options → Notes folder.** The folder was a config value with no UI.
+  Now a section with the current path, a hint, "Choose folder…" (the
+  in-app picker in folder mode: Home / Documents / Dropbox shortcuts,
+  folders only, "Use this folder" beside the path) and "Use the default"
+  when it is not. `switch_notes_dir` flushes and drops the open note,
+  stores "" for the default so the path is not frozen per machine, and
+  reopens the store on the same `index.db`: the reopen's re-scan indexes
+  the new folder and the old folder's rows fall away. An empty folder
+  gets a welcome note, as a first run does.
+- **A watcher.** `watch.rs` (`notify`, recursive, 500 ms settle; our own
+  `.name.tmp` files filtered) feeds `NotesChanged`; `external_change`
+  reloads `.folders` if it was touched, re-indexes, and bails when
+  nothing changed (our own saves: the index already has the hash). For
+  the open note it follows the server sync's rules: gone on disk and
+  clean here → closed; gone but dirty → the edit wins on the next flush;
+  changed on disk and clean → reloaded in place; changed on both sides →
+  the typing here stays open, the disk version is filed as "… (conflict,
+  another device)" (`Store::keep_disk_copy`) and ours is flushed over the
+  file. Dropbox's own "conflicted copy" files simply show up as notes.
+- `Store::reindex` dropped a note that was renamed elsewhere: the new
+  path was indexed under the same id, then the stale path's id was
+  removed. Now a stale path whose id already points elsewhere is left
+  alone. Found by the test for the rename case.
+- Verified live with the harness: a file dropped into the folder appears
+  in the list, and the open note picks up an edit made to its file.
+- Not done: the PocketBase sync and a synced folder on the same notes
+  are not stopped; they should not be combined. Dropbox's Linux client
+  syncs dotfiles, so `.folders` and `.trash/` travel.
