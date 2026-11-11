@@ -91,6 +91,11 @@ pub struct Config {
     /// Last window size in logical pixels; 0 = let the compositor choose.
     pub window_width: u32,
     pub window_height: u32,
+    /// Proofreading marks: red under misspellings, blue under grammar
+    /// slips (the dock's S and G). Both off by default: sometimes you
+    /// just want to write.
+    pub proof_spelling: bool,
+    pub proof_grammar: bool,
 }
 
 impl Config {

@@ -62,6 +62,8 @@ pub struct AppModel {
     buffet_light: retro::Light,
     buffet_ink: retro::Ink,
     show_markers: bool,
+    /// The dock's S and G toggles: which proofreading marks to draw.
+    proof: jjb_core::proof::Want,
     show_nav: bool,
     show_list: bool,
     /// Editor typeface, per-pane text sizes (px) and dock scale — all persisted.
@@ -556,6 +558,10 @@ pub enum Message {
     /// A middle-button sweep over text: the highlighter pen.
     MarkSweep,
     ToggleDock,
+    /// The dock's S (spelling) or G (grammar) switch.
+    ToggleProof(jjb_core::proof::Kind),
+    /// The proofreading engine finished loading: draw the marks now.
+    ProofReady,
     NewFolderName(String),
     CreateFolder,
     TakeScreenshot,
@@ -633,6 +639,10 @@ impl cosmic::Application for AppModel {
         let buffet_light = retro::Light::from_key(&config.buffet_light);
         let buffet_ink = retro::Ink::from_key(&config.buffet_ink);
         let show_markers = config.show_markers;
+        let proof = jjb_core::proof::Want {
+            spelling: config.proof_spelling,
+            grammar: config.proof_grammar,
+        };
         let (show_nav, show_list) = (!config.hide_nav, !config.hide_list);
         let editor_font = retro::EditorFont::from_key(&config.editor_font);
         let editor_weight = match config.editor_weight {
@@ -690,6 +700,7 @@ impl cosmic::Application for AppModel {
             buffet_light,
             buffet_ink,
             show_markers,
+            proof,
             show_nav,
             show_list,
             editor_font,
@@ -832,7 +843,12 @@ impl cosmic::Application for AppModel {
             Some(msg) => app.update(msg),
             None => Task::none(),
         };
-        (app, Task::batch([load_fonts(), title, restore, asked]))
+        let proof = if app.proof.any() {
+            load_proof()
+        } else {
+            Task::none()
+        };
+        (app, Task::batch([load_fonts(), title, restore, asked, proof]))
     }
 
     /// A second launch, or the GNOME Shell search provider, reached the
@@ -2810,6 +2826,39 @@ impl AppModel {
                 }
             }
 
+            Message::ToggleProof(kind) => {
+                let on = match kind {
+                    jjb_core::proof::Kind::Spelling => {
+                        self.proof.spelling = !self.proof.spelling;
+                        self.proof.spelling
+                    }
+                    jjb_core::proof::Kind::Grammar => {
+                        self.proof.grammar = !self.proof.grammar;
+                        self.proof.grammar
+                    }
+                };
+                if let Some(handler) = &self.config_handler {
+                    let saved = match kind {
+                        jjb_core::proof::Kind::Spelling => {
+                            self.config.set_proof_spelling(handler, on)
+                        }
+                        jjb_core::proof::Kind::Grammar => self.config.set_proof_grammar(handler, on),
+                    };
+                    if let Err(why) = saved {
+                        tracing::warn!(%why, "could not persist proofreading setting");
+                    }
+                }
+                if on && !jjb_core::proof::ready() {
+                    return load_proof();
+                }
+            }
+
+            Message::ProofReady => {
+                // Nothing to store: the editors see `proof::ready()` flip
+                // through their settings on this redraw and ask for the
+                // lines they show.
+            }
+
             Message::ToggleMarkers => {
                 self.show_markers = !self.show_markers;
                 if let Some(handler) = &self.config_handler
@@ -3387,6 +3436,10 @@ impl AppModel {
                 self.buffet_light = retro::Light::from_key(&config.buffet_light);
                 self.buffet_ink = retro::Ink::from_key(&config.buffet_ink);
                 self.show_markers = config.show_markers;
+                self.proof = jjb_core::proof::Want {
+                    spelling: config.proof_spelling,
+                    grammar: config.proof_grammar,
+                };
                 self.show_nav = !config.hide_nav;
                 self.show_list = !config.hide_list;
                 self.editor_font = retro::EditorFont::from_key(&config.editor_font);
@@ -4419,6 +4472,48 @@ impl AppModel {
             )
             .into(),
         );
+
+        // Proofreading switches: a letter each, lit (selected row colour)
+        // while its marks are being drawn.
+        items.push(divider().into());
+        for (letter, kind, on, label) in [
+            (
+                "S",
+                jjb_core::proof::Kind::Spelling,
+                self.proof.spelling,
+                fl!("dock-spelling"),
+            ),
+            (
+                "G",
+                jjb_core::proof::Kind::Grammar,
+                self.proof.grammar,
+                fl!("dock-grammar"),
+            ),
+        ] {
+            let glyph = widget::container(
+                retro::text(p, letter)
+                    .font(cosmic::iced::Font {
+                        weight: cosmic::iced::font::Weight::Bold,
+                        ..retro::mono()
+                    })
+                    .size(ds.icon() * 0.8),
+            )
+            .width(ds.icon())
+            .height(ds.icon())
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+            items.push(
+                widget::tooltip(
+                    widget::button::custom(glyph)
+                        .padding(ds.pad())
+                        .class(retro::row_class(p, on))
+                        .on_press(Message::ToggleProof(kind)),
+                    retro::dim(p, label),
+                    widget::tooltip::Position::Top,
+                )
+                .into(),
+            );
+        }
 
         let row = widget::flex_row(items)
             .spacing(1)
@@ -6132,6 +6227,11 @@ impl AppModel {
             font: self.body_font(),
             tag_icons: Arc::clone(&self.tag_icons),
             icon_set: self.icon_set,
+            proof: if jjb_core::proof::ready() {
+                self.proof
+            } else {
+                jjb_core::proof::Want::NONE
+            },
         };
         let mut editor = crate::editor::RichEditor::new(content, settings)
             .drop_anim(crate::anim::params(self.anim_ms, self.anim_ease10))
@@ -7742,6 +7842,12 @@ impl AppModel {
                 text_editor::Action::SelectAll,
             )),
             Step::Dock => self.update(Message::ToggleDock),
+            Step::Proof(want) => {
+                // Load synchronously: a screenshot wants the marks now.
+                jjb_core::proof::load();
+                self.proof = want;
+                Task::none()
+            }
             Step::Undo => self.update(Message::Undo),
             Step::Shortcuts => self.update(Message::ToggleShortcuts),
             Step::SavedInfo => self.update(Message::ToggleSavedInfo),
@@ -8155,6 +8261,17 @@ fn format_time(when: DateTime<Utc>) -> String {
 /// (`a`, `a/b`) that no note carries directly with a count of 0.
 /// Register every bundled font with the renderer (the title font and the
 /// editor faces). Safe to repeat: already-loaded byte slices are skipped.
+/// Build the proofreading engine off the UI thread (a few hundred ms the
+/// first time), then redraw so the open note gets its marks.
+fn load_proof() -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async {
+            let _ = tokio::task::spawn_blocking(jjb_core::proof::load).await;
+        },
+        |()| cosmic::Action::App(Message::ProofReady),
+    )
+}
+
 fn load_fonts() -> Task<cosmic::Action<Message>> {
     let load = |bytes: &'static [u8]| {
         cosmic::iced::font::load(bytes).map(|result| {

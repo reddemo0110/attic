@@ -5,6 +5,7 @@
 //! `move_to`, `cursor`, `line`, `text`, `selection`).
 
 use crate::markdown;
+use jjb_core::proof;
 use cosmic::iced::advanced::graphics::text as gtext;
 use cosmic::iced::{Font, Point, Rectangle, Size};
 use cosmic::widget::text_editor::{Action, Cursor, Edit, Line, LineEnding, Motion, Position};
@@ -31,6 +32,10 @@ struct Inner {
     active: Option<usize>,
     /// Per line: hash of (text, in-fence) and whether it was styled active.
     line_keys: Vec<(u64, bool)>,
+    /// Per line: the proofreading answer and the (text hash, wanted kinds)
+    /// it was computed for. `None` = not asked yet, or asked before the
+    /// engine was loaded — ask again.
+    proof: Vec<Option<(u64, proof::Want, Vec<proof::Issue>)>>,
     /// Set by the app after an automatic rewrite (`[]` → task box, a box
     /// toggle): the widget should render the caret's line, not reveal it.
     render_hint: bool,
@@ -92,6 +97,8 @@ pub struct Overlays {
     pub strikes: Vec<(Rectangle, Option<cosmic_text::Color>)>,
     /// Highlighter bands behind `==marked==` text.
     pub marks: Vec<Rectangle>,
+    /// Proofreading underlines: a thin band under each flagged stretch.
+    pub proof: Vec<(Rectangle, proof::Kind)>,
 }
 
 /// The caret or selection, in buffer coordinates.
@@ -114,6 +121,7 @@ impl RichContent {
             dirty: true,
             active: None,
             line_keys: Vec::new(),
+            proof: Vec::new(),
             render_hint: false,
             bounds: Rectangle::default(),
             pointer_y: None,
@@ -492,6 +500,8 @@ impl RichContent {
         let mut guard = gtext::font_system().write().expect("font system");
         let fs = guard.raw();
         let mut keys = std::mem::take(&mut inner.line_keys);
+        let mut proofs = std::mem::take(&mut inner.proof);
+        let want = style.proof;
         inner.editor.with_buffer_mut(|b| {
             if b.metrics().font_size != size || b.metrics().line_height != line_height {
                 b.set_metrics(Metrics::new(size, line_height));
@@ -500,6 +510,7 @@ impl RichContent {
                 b.set_size(Some(width), None);
             }
             keys.resize(b.lines.len(), (0, false));
+            proofs.resize(b.lines.len(), None);
             let mut in_fence = false;
             for (i, line) in b.lines.iter_mut().enumerate() {
                 let is_active = active == Some(i);
@@ -511,6 +522,20 @@ impl RichContent {
                 line.text().hash(&mut hasher);
                 was_fence.hash(&mut hasher);
                 let k = (hasher.finish(), is_active);
+                // Proofreading, cached by text and by what was wanted. A
+                // fenced line is code: never read. Unanswered (engine still
+                // loading) stays `None` and is asked again next time.
+                let proof_key = (k.0, want);
+                if !want.any() {
+                    proofs[i] = Some((k.0, want, Vec::new()));
+                } else if proofs[i].as_ref().is_none_or(|(h, w, _)| (*h, *w) != proof_key) {
+                    let answer = if was_fence {
+                        Some(Vec::new())
+                    } else {
+                        proof::check_line(line.text(), want)
+                    };
+                    proofs[i] = answer.map(|issues| (k.0, want, issues));
+                }
                 if !restyle_all && keys[i] == k {
                     continue;
                 }
@@ -564,6 +589,7 @@ impl RichContent {
             }
         });
         inner.line_keys = keys;
+        inner.proof = proofs;
         inner.editor.shape_as_needed(fs, false);
         inner.shaped_for = Some(key);
         inner.style = Some(style.clone());
@@ -577,10 +603,46 @@ impl RichContent {
     pub fn overlays(&self) -> Overlays {
         use super::style::*;
         let mut o = Overlays::default();
-        self.with_buffer(|b| {
+        let inner = self.0.borrow();
+        let caret = inner.editor.cursor();
+        let proofs = &inner.proof;
+        inner.editor.with_buffer(|b| {
             let size = b.metrics().font_size;
             for run in b.layout_runs() {
                 let line_text = b.lines.get(run.line_i).map(|l| l.text()).unwrap_or("");
+                // Proofreading underlines: each issue's byte range → the
+                // glyphs it covers on this run. The word under the caret
+                // is left alone while it is still being typed.
+                if let Some(Some((_, _, issues))) = proofs.get(run.line_i) {
+                    for issue in issues {
+                        let on_caret = run.line_i == caret.line
+                            && issue.range.start <= caret.index
+                            && caret.index <= issue.range.end;
+                        if on_caret {
+                            continue;
+                        }
+                        let (mut x0, mut x1) = (f32::MAX, f32::MIN);
+                        for g in run
+                            .glyphs
+                            .iter()
+                            .filter(|g| g.start < issue.range.end && g.end > issue.range.start)
+                        {
+                            x0 = x0.min(g.x);
+                            x1 = x1.max(g.x + g.w);
+                        }
+                        if x0 < x1 {
+                            o.proof.push((
+                                Rectangle {
+                                    x: x0,
+                                    y: run.line_y + size * 0.14,
+                                    width: x1 - x0,
+                                    height: (size * 0.09).clamp(1.5, 2.5),
+                                },
+                                issue.kind,
+                            ));
+                        }
+                    }
+                }
                 let span_rect = |meta: usize| -> Option<(Rectangle, usize, usize)> {
                     let mut x0 = f32::MAX;
                     let mut x1 = f32::MIN;
@@ -932,6 +994,7 @@ mod tests {
             font: cosmic::font::mono(),
             tag_icons: Default::default(),
             icon_set: Default::default(),
+            proof: Default::default(),
         };
         c.update(120.0, cosmic::font::mono(), 15.0, 22.5, &settings, None);
         // Narrow width wraps into several visual lines.
@@ -959,6 +1022,7 @@ mod tests {
             font: cosmic::font::mono(),
             tag_icons: Default::default(),
             icon_set: Default::default(),
+            proof: Default::default(),
         };
         c.update(600.0, cosmic::font::mono(), 15.0, 22.5, &settings, None);
         let o = c.overlays();
@@ -979,6 +1043,7 @@ mod tests {
             font: cosmic::font::mono(),
             tag_icons: Default::default(),
             icon_set: Default::default(),
+            proof: Default::default(),
         };
         c.update(600.0, cosmic::font::mono(), 15.0, 22.5, &settings, None);
         let o = c.overlays();

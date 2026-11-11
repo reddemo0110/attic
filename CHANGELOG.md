@@ -7,6 +7,12 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- **Spelling and grammar marks**, switched on from the dock: two letters
+  after Add image, **S** and **G**, each lit while it is on. With S on,
+  misspelt words get a red line underneath; with G on, grammar slips get a
+  blue one. Both off by default, so you can just write and check later. The
+  word you are typing is never marked. Australian English; `#tags`,
+  `[[links]]`, code and web addresses are left alone. Works offline.
 - **Notes folder** in Options: choose where the notes live, with Home,
   Documents and Dropbox shortcuts in the picker. Point every machine at the
   same synced folder and the notes follow; Attic watches the folder and

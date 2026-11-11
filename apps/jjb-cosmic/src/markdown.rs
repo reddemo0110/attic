@@ -19,6 +19,10 @@ pub struct Settings {
     /// Folder icons by tag; a tag wearing one shows it instead of its `#`.
     pub tag_icons: std::sync::Arc<std::collections::HashMap<String, crate::glyph::Icon>>,
     pub icon_set: crate::glyph::IconSet,
+    /// Which proofreading marks to draw (the dock's S and G toggles). The
+    /// app only asks once the engine is loaded, so an editor never caches
+    /// "nothing wrong" for a line that was never read.
+    pub proof: jjb_core::proof::Want,
 }
 
 #[derive(Clone, Copy, Debug)]

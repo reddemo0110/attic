@@ -1382,3 +1382,44 @@ image breaks a heading mid-word when the column is under ~100 px.
   real app re-indexed each other's notes away (an empty list in one
   capture). `xshot.py` and `dnd-probe.py` give each run its own
   `XDG_DATA_HOME`.
+
+## 2026-11-11 — Spelling and grammar, as switches
+
+- The ask: sometimes you do not want constant reminders that you spelled
+  something wrong or forgot a comma; sometimes you just want to write. So
+  the marks are opt-in, from two toggles in the dock (S and G, after Add
+  image, lit with the selected-row colour while on), red under spelling,
+  blue under grammar. Nothing else: no popups, no auto-correct. Both off
+  by default and remembered (`proof_spelling`, `proof_grammar`).
+- Engine: Harper (`harper-core`, Apache-2.0, pure Rust, offline). One
+  crate gives both spelling and grammar, it reads markdown itself (so
+  `#tags`, `[[links]]`, code spans and URLs pass without masking), and it
+  has an Australian dialect (so "colour", "organised" pass). Rejected:
+  Hunspell-style dictionaries (`spellbook`) — spelling only, any language,
+  but grammar would have been a second project; LanguageTool — a Java
+  server or a cloud call, and notes stay on the machine. English only is
+  the price; a Hunspell path can be added if non-English notes turn up.
+- Where: `jjb_core::proof` (behind `full`), one line at a time
+  (`check_line`), with Harper's spans turned into byte ranges, so the
+  Windows app gets the same checker. The rule set is Harper's curated one
+  minus `UseTitleCase` (a note's headings are sentences); more exceptions
+  go in `RULES_OFF` as they annoy.
+- Cost: the engine takes ~300 ms to build, so it is built once, off the UI
+  thread (`load_proof()` when a toggle turns on, or at start when one was
+  left on), and the editor only asks once `proof::ready()` — the settings
+  carry `Want::NONE` until then, so no line is ever cached as "clean"
+  before it was read. A line costs ~0.3–1.5 ms; the editor caches the
+  answer per (line text, wanted kinds) next to its styling cache and
+  re-asks only for lines that changed, so typing costs one line.
+- Drawing: an issue's byte range is matched to the glyphs it covers on
+  each layout run (`Overlays::proof`) and drawn as a 2 px band under the
+  baseline — a plain line, in keeping with the retro surface. The word
+  under the caret is skipped while it is being typed (the issue's range
+  touches the caret index on the caret's line).
+- Not yet: suggestions. The editor has no right-click menu today; a
+  menu offering Harper's replacements, "add to dictionary" (a file in the
+  notes folder, so Dropbox carries it) and "ignore" is the next step.
+- Harness: `proof:s|g|sg|off` loads the engine synchronously and sets the
+  toggles, for screenshots. The plain `xshot.py` run (session Xwayland)
+  found no window today; `--nested 1600x1000 --wait 9` did.
+

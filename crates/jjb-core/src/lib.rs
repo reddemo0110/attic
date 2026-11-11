@@ -22,6 +22,8 @@ pub mod note;
 #[cfg(feature = "full")]
 pub mod platform;
 #[cfg(feature = "full")]
+pub mod proof;
+#[cfg(feature = "full")]
 pub mod store;
 #[cfg(feature = "full")]
 pub mod sync;

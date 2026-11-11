@@ -693,6 +693,21 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
             });
         }
 
+        // Proofreading: red under a misspelling, blue under a grammar slip.
+        for (r, kind) in &overlays.proof {
+            let color = match kind {
+                jjb_core::proof::Kind::Spelling => Color::from_rgb(0.90, 0.30, 0.30),
+                jjb_core::proof::Kind::Grammar => Color::from_rgb(0.35, 0.55, 0.95),
+            };
+            renderer.fill_quad(
+                Quad {
+                    bounds: at(r),
+                    ..Quad::default()
+                },
+                Background::Color(color.scale_alpha(0.85)),
+            );
+        }
+
         // On top of the glyphs: strikes, task boxes with their mark, bullets.
         for (r, c) in &overlays.strikes {
             let color = c.map_or(p.fg.scale_alpha(0.6), |c| {

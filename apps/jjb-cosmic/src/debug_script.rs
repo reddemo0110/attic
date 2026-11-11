@@ -27,6 +27,8 @@ pub enum Step {
     Format(String),
     /// Select all text in the editor.
     SelectAll,
+    /// Proofreading marks: `s`, `g`, `sg` or `off` (loads the engine first).
+    Proof(jjb_core::proof::Want),
     /// Toggle the dock's `+` section.
     Dock,
     /// Undo / redo one step.
@@ -179,6 +181,13 @@ pub fn parse(script: &str) -> Vec<Step> {
                 "format" => Step::Format(arg.trim().to_owned()),
                 "selectall" => Step::SelectAll,
                 "dock" => Step::Dock,
+                "proof" => {
+                    let a = arg.trim();
+                    Step::Proof(jjb_core::proof::Want {
+                        spelling: a.contains('s'),
+                        grammar: a.contains('g'),
+                    })
+                }
                 "undo" => Step::Undo,
                 "shortcuts" => Step::Shortcuts,
                 "savedinfo" => Step::SavedInfo,

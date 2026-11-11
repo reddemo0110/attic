@@ -23,6 +23,7 @@ full = [
     "dep:ureq",
     "dep:uuid",
     "dep:chrono",
+    "dep:harper-core",
 ]
 
 [dependencies]
@@ -34,6 +35,8 @@ tracing.workspace = true
 blake3 = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
+# Proofreading (spelling + grammar), offline, English. Pure Rust.
+harper-core = { version = "3", optional = true }
 image = { workspace = true, optional = true }
 open = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
