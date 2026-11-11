@@ -151,6 +151,7 @@ buffet-off = Nothing plated yet — click a colour to switch the buffet on.
 show-nav = Views and tags
 show-list = Notes list
 editor-only = Editor only
+immersive = Immersive writing
 zoom-in = Bigger text
 zoom-out = Smaller text
 zoom-reset = Reset text size

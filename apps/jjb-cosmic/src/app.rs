@@ -66,6 +66,12 @@ pub struct AppModel {
     proof: jjb_core::proof::Want,
     show_nav: bool,
     show_list: bool,
+    /// Immersive writing: the window fullscreen, chrome and side panes
+    /// gone, the dock hidden under a hairline. Holds the (nav, list)
+    /// visibility to put back on the way out. Never persisted.
+    immersive: Option<(bool, bool)>,
+    /// The hidden dock is showing because the pointer is on it.
+    dock_peek: bool,
     /// Editor typeface, per-pane text sizes (px) and dock scale — all persisted.
     editor_font: retro::EditorFont,
     /// Editor body weight (200 | 300 | 400 | 500).
@@ -442,6 +448,10 @@ pub enum Message {
     ToggleNav,
     ToggleList,
     ToggleSolo,
+    /// Immersive writing on/off (fullscreen, nothing but the note).
+    ToggleImmersive,
+    /// The pointer reached (true) or left (false) the hidden dock.
+    DockPeek(bool),
     ImagesDropped(Vec<PathBuf>),
     PickImage,
     PickFile,
@@ -788,6 +798,8 @@ impl cosmic::Application for AppModel {
             notes_scroll_id: widget::Id::unique(),
             editor_scroll_id: widget::Id::unique(),
             dock_open: false,
+            immersive: None,
+            dock_peek: false,
             new_folder: String::new(),
             folder_id: widget::Id::unique(),
             notes: Vec::new(),
@@ -912,6 +924,7 @@ impl cosmic::Application for AppModel {
                 MenuAction::ToggleList,
             ),
             menu::Item::Button(fl!("editor-only"), None, MenuAction::Solo),
+            menu::Item::Button(fl!("immersive"), None, MenuAction::Immersive),
             menu::Item::Divider,
             menu::Item::Button(fl!("zoom-in"), None, MenuAction::ZoomIn),
             menu::Item::Button(fl!("zoom-out"), None, MenuAction::ZoomOut),
@@ -1132,7 +1145,7 @@ impl cosmic::Application for AppModel {
             .push(self.editor_frame(&p))
             .width(Length::Fill)
             .height(Length::Fill);
-        if !self.backlinks.is_empty() {
+        if !self.backlinks.is_empty() && self.immersive.is_none() {
             editor_col = editor_col.push(retro::hrule(&p)).push(
                 // Pane padding + title bar + one row of chips + scrollbar.
                 widget::container(self.backlinks_frame(&p))
@@ -2821,6 +2834,36 @@ impl AppModel {
                 }
             }
 
+            Message::ToggleImmersive => {
+                let Some(id) = self.core.main_window_id() else {
+                    return Task::none();
+                };
+                use cosmic::iced::window::{Mode, set_mode};
+                match self.immersive.take() {
+                    Some((nav, list)) => {
+                        self.show_nav = nav;
+                        self.show_list = list;
+                        self.dock_peek = false;
+                        self.core.window.show_headerbar = true;
+                        return set_mode(id, Mode::Windowed);
+                    }
+                    None => {
+                        self.immersive = Some((self.show_nav, self.show_list));
+                        self.show_nav = false;
+                        self.show_list = false;
+                        self.dock_peek = false;
+                        self.dock_open = false;
+                        self.core.window.show_context = false;
+                        self.core.window.show_headerbar = false;
+                        return Task::batch([set_mode(id, Mode::Fullscreen), self.focus_editor()]);
+                    }
+                }
+            }
+
+            Message::DockPeek(on) => {
+                self.dock_peek = on;
+            }
+
             Message::ToggleProof(kind) => {
                 let on = match kind {
                     jjb_core::proof::Kind::Spelling => {
@@ -3401,6 +3444,12 @@ impl AppModel {
                     self.note_line.clear();
                     return Task::none();
                 }
+                if self.immersive.is_some()
+                    && modifiers.is_empty()
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
+                {
+                    return self.update(Message::ToggleImmersive);
+                }
                 let action = self
                     .key_binds
                     .iter()
@@ -3435,8 +3484,12 @@ impl AppModel {
                     spelling: config.proof_spelling,
                     grammar: config.proof_grammar,
                 };
-                self.show_nav = !config.hide_nav;
-                self.show_list = !config.hide_list;
+                if let Some(restore) = self.immersive.as_mut() {
+                    *restore = (!config.hide_nav, !config.hide_list);
+                } else {
+                    self.show_nav = !config.hide_nav;
+                    self.show_list = !config.hide_list;
+                }
                 self.editor_font = retro::EditorFont::from_key(&config.editor_font);
                 self.ui_font = retro::EditorFont::from_key(&config.ui_font);
                 self.list_font = if config.list_font.is_empty() {
@@ -4311,7 +4364,16 @@ impl AppModel {
             column =
                 column.push(widget::container(retro::dim(p, fl!("trash-hint"))).padding([6, 10]));
         }
-        column = column.push(self.dock(p));
+        let column: Element<'a, Message> = if self.immersive.is_some() {
+            // The dock lies over the text, hidden under a hairline until
+            // the pointer comes down to it — the text never shifts.
+            cosmic::iced::widget::stack([column.into(), self.hidden_dock(p)])
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            column.push(self.dock(p)).into()
+        };
 
         let framed = retro::pane_el(
             p,
@@ -4402,6 +4464,50 @@ impl AppModel {
         if let Err(why) = saved {
             tracing::warn!(%why, ?pane, "saving text size");
         }
+    }
+
+    /// Immersive writing's dock: a short hairline at the foot of the note
+    /// while hidden; the pointer on it brings the dock up, leaving it
+    /// puts it away.
+    fn hidden_dock<'a>(&'a self, p: &Palette) -> Element<'a, Message> {
+        let inner: Element<'a, Message> = if self.dock_peek {
+            widget::container(self.dock(p))
+                .width(Length::Fill)
+                .padding([12, 0, 0, 0])
+                .into()
+        } else {
+            let line = p.mute;
+            widget::container(
+                widget::container(widget::Space::new().width(160).height(2))
+                    .class(cosmic::theme::Container::custom(move |_| {
+                        widget::container::Style {
+                            background: Some(cosmic::iced::Background::Color(line)),
+                            border: cosmic::iced::Border {
+                                radius: 1.0.into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }
+                    })),
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(18.0))
+            .align_x(Alignment::Center)
+            .align_y(Alignment::End)
+            .padding([0, 0, 6, 0])
+            .into()
+        };
+        let area = widget::mouse_area(inner);
+        let area = if self.dock_peek {
+            area.on_exit(Message::DockPeek(false))
+        } else {
+            area.on_enter(Message::DockPeek(true))
+        };
+        widget::container(area)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_y(Alignment::End)
+            .into()
     }
 
     /// The dock: format actions for the open note, `+`, and the theme
@@ -5904,6 +6010,7 @@ impl AppModel {
                     (fl!("show-nav"), MenuAction::ToggleNav),
                     (fl!("show-list"), MenuAction::ToggleList),
                     (fl!("editor-only"), MenuAction::Solo),
+                    (fl!("immersive"), MenuAction::Immersive),
                     (fl!("zoom-in"), MenuAction::ZoomIn),
                     (fl!("zoom-out"), MenuAction::ZoomOut),
                     (fl!("zoom-reset"), MenuAction::ZoomReset),
@@ -7853,6 +7960,7 @@ impl AppModel {
             Step::Redo => self.update(Message::Redo),
             Step::Themes => self.update(Message::ToggleContextPage(ContextPage::Themes)),
             Step::Solo => self.update(Message::ToggleSolo),
+            Step::Immersive => self.update(Message::ToggleImmersive),
             Step::Image(path) => self.update(Message::ImagesDropped(vec![PathBuf::from(path)])),
             Step::Pick => self.update(Message::PickImage),
             Step::Attach(path) => self.import_file_at(std::path::Path::new(&path), None),
@@ -8662,6 +8770,13 @@ fn key_binds() -> HashMap<menu::KeyBind, MenuAction> {
     bind(&[Alt], ",", MenuAction::Themes);
     bind(&[Ctrl, Shift], "m", MenuAction::ToggleMarkers);
     bind(&[Ctrl, Shift], "h", MenuAction::Shortcuts);
+    binds.insert(
+        menu::KeyBind {
+            modifiers: Vec::new(),
+            key: Key::Named(keyboard::key::Named::F11),
+        },
+        MenuAction::Immersive,
+    );
     binds
 }
 
@@ -8909,6 +9024,7 @@ pub enum MenuAction {
     ToggleNav,
     ToggleList,
     Solo,
+    Immersive,
     ZoomIn,
     ZoomOut,
     ZoomReset,
@@ -8938,6 +9054,7 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::ToggleNav => Message::ToggleNav,
             MenuAction::ToggleList => Message::ToggleList,
             MenuAction::Solo => Message::ToggleSolo,
+            MenuAction::Immersive => Message::ToggleImmersive,
             MenuAction::ZoomIn => Message::SizeStep(Pane::Editor, 1),
             MenuAction::ZoomOut => Message::SizeStep(Pane::Editor, -1),
             MenuAction::ZoomReset => Message::SizeReset(Pane::Editor),

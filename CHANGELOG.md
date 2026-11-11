@@ -13,6 +13,12 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   blue one. Both off by default, so you can just write and check later. The
   word you are typing is never marked. Australian English; `#tags`,
   `[[links]]`, code and web addresses are left alone. Works offline.
+- **Immersive writing** (View menu, or **F11**): the window takes the whole
+  screen, GNOME's top bar and dock included, and everything but the note
+  goes away: no folders, no notes list, no menu bar. The dock hides under
+  a short hairline at the foot of the page; rest the pointer on it and the
+  dock rises, move away and it goes. **Esc** or F11 brings everything back
+  the way it was.
 - **Paper, a highlight with no colour**, last in the colour buffet's
   Highlight row: on a dark plate the headings, tags and links come out in
   Nearly White, the third paper colour; on a light plate they take your

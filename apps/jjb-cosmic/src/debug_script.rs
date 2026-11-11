@@ -42,6 +42,8 @@ pub enum Step {
     Themes,
     /// Toggle editor-only layout.
     Solo,
+    /// Immersive writing on/off (fullscreen, nothing but the note).
+    Immersive,
     /// Import an image file into the note.
     Image(String),
     /// Open the image picker (portal dialog).
@@ -194,6 +196,7 @@ pub fn parse(script: &str) -> Vec<Step> {
                 "redo" => Step::Redo,
                 "themes" => Step::Themes,
                 "solo" => Step::Solo,
+                "immersive" => Step::Immersive,
                 "image" => Step::Image(unescape(arg)),
                 "pick" => Step::Pick,
                 "pickdir" => Step::PickDir(unescape(arg)),

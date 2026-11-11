@@ -1441,3 +1441,31 @@ image breaks a heading mid-word when the column is under ~100 px.
   buffet (the `notesdir` rule, same reason). Its arguments are
   comma-separated: `buffet:paper,richblack`.
 
+## 2026-11-11 — Immersive writing
+
+- The ask: a mode where "everything goes away except the writing" — the
+  folders, the list, the dock (hidden like the Mac's, with a thin line to
+  say it is there), and the desktop itself, the way a slideshow takes
+  the whole screen.
+- Three things at once (`Message::ToggleImmersive`): the window goes
+  fullscreen (`iced::window::set_mode(id, Mode::Fullscreen)`; on Wayland
+  that is `xdg_toplevel.set_fullscreen`, and GNOME hides its top bar and
+  dock for a fullscreen window), libcosmic's header bar is switched off
+  (`core.window.show_headerbar = false` — the menu bar lives in it), and
+  the side panes close. `immersive: Option<(nav, list)>` remembers what
+  to put back; it is never persisted, so the app always starts normal.
+  `UpdateConfig` writes the pane visibility into that memory instead of
+  the live state while immersive, or a config write from anywhere
+  (the buffet, a toggle) would bring the panes back mid-session.
+- The dock: a `stack` over the text with a full-width `mouse_area` at
+  the foot — a 160 × 2 px line in the mute colour while hidden,
+  `on_enter` → `DockPeek(true)` swaps in the real dock, `on_exit` puts
+  it away. Over the text, not under it, so nothing shifts when it shows.
+  Rejected: swapping the dock for the line in the column — the text
+  area would jump by the dock's height every time.
+- Out: Esc (when nothing else wants it: tables and drags take it first)
+  or F11 again. The View menu carries it as "Immersive writing". F11 is
+  the one named-key binding; the `bind` helper only takes characters.
+- Not verified: the GNOME top bar vanishing. The nested harness has no
+  panel; the fullscreen request itself is the standard one.
+
