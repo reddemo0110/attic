@@ -57,7 +57,7 @@ pub struct AppModel {
     /// while `buffet_on`.
     buffet_on: bool,
     buffet_light_mode: bool,
-    buffet_highlight: retro::Theme,
+    buffet_highlight: retro::Highlight,
     buffet_dark: retro::Dark,
     buffet_light: retro::Light,
     buffet_ink: retro::Ink,
@@ -368,7 +368,7 @@ pub enum Message {
     /// Colour buffet: pick the highlight (a minimal theme), a dark plate,
     /// a paper plate, or the light side's ink. Any turns the buffet on
     /// (plates pick their side too); `SetTheme` turns it off.
-    SetBuffetHighlight(retro::Theme),
+    SetBuffetHighlight(retro::Highlight),
     SetBuffetDark(retro::Dark),
     SetBuffetLight(retro::Light),
     SetBuffetInk(retro::Ink),
@@ -2778,13 +2778,8 @@ impl AppModel {
                 }
             }
 
-            Message::SetBuffetHighlight(theme) => {
-                // A classic theme is not a highlight; ignore rather than
-                // silently serving the previous colour.
-                if !theme.is_minimal() {
-                    return Task::none();
-                }
-                self.buffet_highlight = theme;
+            Message::SetBuffetHighlight(highlight) => {
+                self.buffet_highlight = highlight;
                 self.persist_buffet();
             }
 
@@ -3682,11 +3677,12 @@ impl AppModel {
         }
     }
 
-    /// The buffet's highlight colour (the stored minimal theme's accent).
+    /// The buffet's highlight colour: the minimal theme's accent, or for
+    /// the Paper highlight the paper itself on a dark plate and the ink
+    /// on a light one.
     fn buffet_accent(&self) -> cosmic::iced::Color {
         self.buffet_highlight
-            .minimal_accent()
-            .unwrap_or_else(|| retro::Theme::Tomato.minimal_accent().unwrap())
+            .accent(self.buffet_light_mode, self.buffet_ink)
     }
 
     /// Switch the buffet on and write its three config entries.
@@ -3701,7 +3697,7 @@ impl AppModel {
                 self.config.set_buffet_on(handler, true),
                 self.config.set_buffet_mode(handler, mode.to_owned()),
                 self.config
-                    .set_buffet_highlight(handler, self.buffet_highlight.key().to_owned()),
+                    .set_buffet_highlight(handler, self.buffet_highlight.key()),
                 self.config
                     .set_buffet_dark(handler, self.buffet_dark.key().to_owned()),
                 self.config
@@ -4635,15 +4631,18 @@ impl AppModel {
                 widget::container(widget::text(fl!("buffet-highlight"))).padding([6, 0, 2, 0]),
             );
             let mut chips: Vec<Element<'_, Message>> = Vec::new();
-            for theme in retro::Theme::ALL.into_iter().filter(|t| t.is_minimal()) {
-                if let Some(colour) = theme.minimal_accent() {
-                    chips.push(retro::chip(
-                        colour,
-                        self.buffet_highlight == theme,
-                        label_color,
-                        Message::SetBuffetHighlight(theme),
-                    ));
-                }
+            let highlights = retro::Theme::ALL
+                .into_iter()
+                .filter(|t| t.is_minimal())
+                .map(retro::Highlight::Theme)
+                .chain(std::iter::once(retro::Highlight::Paper));
+            for highlight in highlights {
+                chips.push(retro::chip(
+                    highlight.chip_color(),
+                    self.buffet_highlight == highlight,
+                    label_color,
+                    Message::SetBuffetHighlight(highlight),
+                ));
             }
             col = col.push(widget::flex_row(chips).spacing(6));
 
@@ -8014,13 +8013,13 @@ impl AppModel {
                 self.update(Message::MarkSweep)
             }
             Step::Buffet(highlight, dark) => {
-                let _ = self.update(Message::SetBuffetHighlight(retro::Theme::from_key(
+                let _ = self.update(Message::SetBuffetHighlight(retro::Highlight::from_key(
                     &highlight,
                 )));
                 self.update(Message::SetBuffetDark(retro::Dark::from_key(&dark)))
             }
             Step::BuffetLight(highlight, paper, ink) => {
-                let _ = self.update(Message::SetBuffetHighlight(retro::Theme::from_key(
+                let _ = self.update(Message::SetBuffetHighlight(retro::Highlight::from_key(
                     &highlight,
                 )));
                 let _ = self.update(Message::SetBuffetLight(retro::Light::from_key(&paper)));
@@ -8433,10 +8432,9 @@ fn word_bounds(line: &str, col: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// The buffet highlight from config: a minimal theme key, or Tomato.
-fn buffet_highlight_from_config(s: &str) -> retro::Theme {
-    let t = retro::Theme::from_key(s);
-    if t.is_minimal() { t } else { retro::Theme::Tomato }
+/// The buffet highlight from config: "paper", a minimal theme key, or Tomato.
+fn buffet_highlight_from_config(s: &str) -> retro::Highlight {
+    retro::Highlight::from_key(s)
 }
 
 fn title_font_from_config(s: &str) -> retro::EditorFont {

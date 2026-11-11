@@ -1423,3 +1423,21 @@ image breaks a heading mid-word when the column is under ~100 px.
   toggles, for screenshots. The plain `xshot.py` run (session Xwayland)
   found no window today; `--nested 1600x1000 --wait 9` did.
 
+## 2026-11-11 — Paper: the buffet highlight with no colour
+
+- The ask: "sometimes I feel like no colour at all, just white in the
+  highlights" — the third paper colour (Nearly White, #F4F4F4-ish) as an
+  option in the Highlight row, for dark mode.
+- The highlight was a minimal `Theme`; it is now `retro::Highlight`
+  (`Theme(Theme)` or `Paper`), stored as the key `paper`. Rejected: a new
+  minimal theme with a white accent — it would also have appeared in the
+  theme list as a white-on-charcoal theme nobody asked for, and would be
+  invisible on a paper plate.
+- On a light plate Paper resolves to the chosen ink instead
+  (`Highlight::accent(light_mode, ink)`): "no colour" means the writing's
+  own tone on either side, and nothing disappears into the page.
+- Harness: `buffet:` steps call `persist_buffet()`, so a screenshot run
+  must set `XDG_CONFIG_HOME` to a scratch dir or it rewrites the real
+  buffet (the `notesdir` rule, same reason). Its arguments are
+  comma-separated: `buffet:paper,richblack`.
+

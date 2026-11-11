@@ -13,6 +13,10 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   blue one. Both off by default, so you can just write and check later. The
   word you are typing is never marked. Australian English; `#tags`,
   `[[links]]`, code and web addresses are left alone. Works offline.
+- **Paper, a highlight with no colour**, last in the colour buffet's
+  Highlight row: on a dark plate the headings, tags and links come out in
+  Nearly White, the third paper colour; on a light plate they take your
+  chosen ink. For the days you want just white on black.
 - **Notes folder** in Options: choose where the notes live, with Home,
   Documents and Dropbox shortcuts in the picker. Point every machine at the
   same synced folder and the notes follow; Attic watches the folder and

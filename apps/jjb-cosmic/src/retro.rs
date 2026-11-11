@@ -920,6 +920,61 @@ pub fn buffet_light(accent: Color, plate: Light, ink: Ink) -> Palette {
     minimal_with(accent, plate.color(), ink.color())
 }
 
+/// The buffet's highlight: a minimal theme's card colour, or no colour
+/// at all — the paper (Nearly White) on a dark plate, the ink on a light
+/// one, so headings, tags and links sit in the writing's own tone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Highlight {
+    Theme(Theme),
+    Paper,
+}
+
+impl Highlight {
+    /// The paper colour used as the white highlight.
+    pub const PAPER: Light = Light::NearlyWhite;
+
+    pub fn key(self) -> String {
+        match self {
+            Highlight::Theme(t) => t.key().to_owned(),
+            Highlight::Paper => "paper".to_owned(),
+        }
+    }
+
+    /// "paper", or a minimal theme key; anything else is Tomato.
+    pub fn from_key(key: &str) -> Highlight {
+        if key == "paper" {
+            return Highlight::Paper;
+        }
+        let t = Theme::from_key(key);
+        Highlight::Theme(if t.is_minimal() { t } else { Theme::Tomato })
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Highlight::Theme(t) => t.label(),
+            Highlight::Paper => "Paper",
+        }
+    }
+
+    /// The colour on the picker's chip.
+    pub fn chip_color(self) -> Color {
+        match self {
+            Highlight::Theme(t) => t.minimal_accent().unwrap_or(Color::WHITE),
+            Highlight::Paper => Self::PAPER.color(),
+        }
+    }
+
+    /// The accent the palette is built with: the paper on a dark plate,
+    /// the chosen ink on a light one.
+    pub fn accent(self, light_mode: bool, ink: Ink) -> Color {
+        match self {
+            Highlight::Theme(_) => self.chip_color(),
+            Highlight::Paper if light_mode => ink.color(),
+            Highlight::Paper => Self::PAPER.color(),
+        }
+    }
+}
+
 /// The minimal family: one light colour on the shared charcoal base.
 fn minimal(accent: Color) -> Palette {
     minimal_with(accent, hex(0x121214), hex(0xd7d7d5))

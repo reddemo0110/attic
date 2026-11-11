@@ -189,8 +189,9 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
 - Autosave is debounced (`AUTOSAVE_DELAY`); anything that switches or
   drops the current note must call `close_current()` / `flush()` first.
 - The script harness uses the real cosmic-config: a step that writes a
-  setting (`notesdir`) needs `XDG_CONFIG_HOME` pointed at a scratch dir or
-  it changes the user's real app.
+  setting (`notesdir`, `buffet`, `theme`, anything that persists) needs
+  `XDG_CONFIG_HOME` pointed at a scratch dir or it changes the user's real
+  app. `buffet:` takes comma-separated keys (`buffet:paper,richblack`).
 - Sync never clobbers: both-sides-changed becomes a conflict copy, edit
   beats delete, the open note auto-updates to the server version; a
   different file of the same name makes the local one step aside
