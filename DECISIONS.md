@@ -1554,3 +1554,25 @@ image breaks a heading mid-word when the column is under ~100 px.
   absolute motion to the X client during the hold. Verified with real
   input: drag across a picture, Ctrl+C, click, Ctrl+V.
 
+## 2026-11-15 — Duplicate, from a note's right-click menu
+
+- The ask: right-click a note, duplicate it, then move the copy to
+  another section.
+- Notes in the list had no right-click menu; they now have the folders'
+  kind (`note_menu`, a popover under the row) with one entry,
+  *duplicate*. Notes in the trash get no menu.
+- `note::duplicate_body` (core, so the Windows app gets it) appends
+  " copy" to the title line: the first line that says something, not a
+  blank line or the tag line a folder pre-fills. A note with no title,
+  or whose first line is a picture, is copied unchanged. The filename
+  follows the title as always, so the two files never collide.
+- The copy is a new note (new id, created now, not pinned) made through
+  `create_note`, so it opens at once. It keeps the tags, which is what
+  puts it in the same folder; pictures are the same files in `assets/`,
+  shared, not copied. `flush()` runs first so the copy has what is on
+  screen, and the search is cleared so the copy is not hidden.
+- Not done: a "move to folder" entry. A note's folder is its tag, and a
+  note can carry several; which one a move replaces needs deciding with
+  the user first.
+- Harness: steps `notemenu`, `duplicate`; `xshot.py --act rclick:X,Y`.
+  Verified with a real right-click and click.

@@ -7,6 +7,11 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- **Duplicate a note**: right-click a note in the list and choose
+  *duplicate*. The copy opens straight away with " copy" after its
+  title, pictures and all, and sits in the same folders as the original
+  because it carries the same tags. Change its tag to move it somewhere
+  else.
 - **Twenty new buffet colours, in their own New section** at the foot of
   the colour buffet, under the colours that were already there, so the
   newcomers are easy to spot. Twelve highlights: Barbados Cherry, Barbera,

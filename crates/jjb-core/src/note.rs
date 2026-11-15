@@ -146,6 +146,35 @@ pub fn derive_title(body: &str) -> String {
         .unwrap_or_else(|| UNTITLED.to_owned())
 }
 
+/// The body of a duplicate: the same note with " copy" after its title,
+/// so the two can be told apart in the list and get different filenames.
+/// A note with no title line, or one whose title is a picture, is copied
+/// as it is.
+pub fn duplicate_body(body: &str) -> String {
+    let mut done = false;
+    let mut out: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let t = line.trim();
+        let is_title = !done
+            && !t.is_empty()
+            && !is_tag_only_line(t)
+            && !t.trim_start_matches('#').trim().is_empty();
+        if is_title {
+            done = true;
+            if crate::images::parse_line(line).is_none() {
+                out.push(format!("{} copy", line.trim_end()));
+                continue;
+            }
+        }
+        out.push(line.to_owned());
+    }
+    let mut copy = out.join("\n");
+    if body.ends_with('\n') {
+        copy.push('\n');
+    }
+    copy
+}
+
 /// A line made only of `#tags` (e.g. the line a folder pre-fills) is
 /// metadata, not a title.
 pub fn is_tag_only_line(line: &str) -> bool {
@@ -601,6 +630,27 @@ pub fn new_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_duplicate_is_the_same_note_with_copy_after_its_title() {
+        assert_eq!(
+            duplicate_body("# Shopping\n\n#home\n- milk\n"),
+            "# Shopping copy\n\n#home\n- milk\n"
+        );
+        // The title is the first line that says something: not a blank
+        // line, not the tag line a folder pre-fills.
+        assert_eq!(
+            duplicate_body("\n#work\nPlan for Monday\nmore"),
+            "\n#work\nPlan for Monday copy\nmore"
+        );
+        assert_eq!(derive_title(&duplicate_body("# Shopping\n")), "Shopping copy");
+        // Nothing to rename: copied as it is.
+        assert_eq!(duplicate_body("# \n\n#home\n"), "# \n\n#home\n");
+        assert_eq!(
+            duplicate_body("![p](assets/p.png)\ntext\n"),
+            "![p](assets/p.png)\ntext\n"
+        );
+    }
 
     #[test]
     fn repointing_an_asset_touches_whole_targets_only() {

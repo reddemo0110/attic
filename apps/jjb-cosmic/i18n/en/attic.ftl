@@ -42,6 +42,7 @@ frame-views = views
 frame-tags = tags
 tag-rename = rename…
 tag-icon = icon…
+note-duplicate = duplicate
 tag-icon-none = none
 tag-rename-placeholder = new name
 frame-notes = notes

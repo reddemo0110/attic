@@ -213,6 +213,8 @@ pub struct AppModel {
     collapsed: HashSet<String>,
     /// Tag whose right-click menu is open.
     tag_menu: Option<String>,
+    /// The note (by id) whose right-click menu is open in the list.
+    note_menu: Option<String>,
     /// Tag being renamed and the draft name.
     tag_rename: Option<(String, String)>,
     /// Tag whose icon grid is open.
@@ -438,6 +440,10 @@ pub enum Message {
     ToggleTagFold(String),
     /// Right-click menu on a tag (None closes it).
     TagMenu(Option<String>),
+    /// Open (or close) a note's right-click menu in the list.
+    NoteMenu(Option<String>),
+    /// Make a copy of this note and open it.
+    DuplicateNote(String),
     TagRenameStart(String),
     TagRenameInput(String),
     TagRenameCommit,
@@ -791,6 +797,7 @@ impl cosmic::Application for AppModel {
             view_counts: [0; 3],
             collapsed,
             tag_menu: None,
+            note_menu: None,
             tag_rename: None,
             tag_icon_pick: None,
             tag_icons,
@@ -1978,6 +1985,31 @@ impl AppModel {
                     && let Err(why) = self.config.set_dock_size(handler, size.key().to_owned())
                 {
                     tracing::warn!(%why, "saving dock size");
+                }
+            }
+
+            Message::NoteMenu(id) => {
+                self.note_menu = id;
+            }
+
+            Message::DuplicateNote(id) => {
+                self.note_menu = None;
+                // What is on screen may be newer than the file.
+                self.flush();
+                let body = self.store.as_mut().and_then(|s| match s.load(&id) {
+                    Ok(note) => note.filter(|n| !n.trashed).map(|n| n.body),
+                    Err(err) => {
+                        tracing::error!(%err, "loading the note to duplicate");
+                        None
+                    }
+                });
+                if let Some(body) = body {
+                    self.dock_open = false;
+                    // The copy carries the same tags, so it lands in the
+                    // same folders; a search would hide it.
+                    self.query.clear();
+                    let task = self.create_note(note::duplicate_body(&body), false);
+                    return Task::batch([task, self.queue_previews()]);
                 }
             }
 
@@ -4272,19 +4304,46 @@ impl AppModel {
             let mut col = widget::column::with_capacity(self.notes.len()).spacing(4);
             for note in &self.notes {
                 let selected = self.current.as_ref().is_some_and(|c| c.id == note.id);
-                col = col.push(
-                    widget::button::custom(note_row(
-                        p,
-                        note,
-                        selected,
-                        self.list_size,
-                        self.list_font(),
-                    ))
-                    .padding([7, 8])
-                    .width(Length::Fill)
-                    .class(retro::row_class(p, selected))
-                    .on_press(Message::Select(note.id.clone())),
-                );
+                let row = widget::button::custom(note_row(
+                    p,
+                    note,
+                    selected,
+                    self.list_size,
+                    self.list_font(),
+                ))
+                .padding([7, 8])
+                .width(Length::Fill)
+                .class(retro::row_class(p, selected))
+                .on_press(Message::Select(note.id.clone()));
+                // Right-click: a small menu, as on the folders. Nothing
+                // in it applies to a note in the trash.
+                if note.trashed {
+                    col = col.push(row);
+                    continue;
+                }
+                let row = widget::mouse_area(row)
+                    .on_right_press(Message::NoteMenu(Some(note.id.clone())));
+                if self.note_menu.as_deref() == Some(note.id.as_str()) {
+                    let item = widget::button::custom(
+                        retro::text(p, fl!("note-duplicate")).size(f32::from(self.list_size)),
+                    )
+                    .padding([3, 10])
+                    .width(Length::Fixed(160.0))
+                    .class(retro::row_class(p, false))
+                    .on_press(Message::DuplicateNote(note.id.clone()));
+                    col = col.push(
+                        widget::popover(row)
+                            .popup(
+                                widget::container(item)
+                                    .padding(4)
+                                    .class(retro::dock_class(p)),
+                            )
+                            .position(widget::popover::Position::Bottom)
+                            .on_close(Message::NoteMenu(None)),
+                    );
+                } else {
+                    col = col.push(row);
+                }
             }
             self.hover_scroll(
                 ScrollArea::Notes,
@@ -8499,6 +8558,14 @@ impl AppModel {
                 Task::none()
             }
             Step::TagMenu(tag) => self.update(Message::TagMenu(Some(tag))),
+            Step::NoteMenu => {
+                let id = self.current.as_ref().map(|n| n.id.clone());
+                self.update(Message::NoteMenu(id))
+            }
+            Step::Duplicate => match self.current.as_ref().map(|n| n.id.clone()) {
+                Some(id) => self.update(Message::DuplicateNote(id)),
+                None => Task::none(),
+            },
             Step::TagDrag(entry, slot) | Step::TagMove(entry, slot) => {
                 self.tag_drag = Some(TagDrag {
                     entry,
