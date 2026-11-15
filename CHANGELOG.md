@@ -7,6 +7,15 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- **Twenty new buffet colours, in their own New section** at the foot of
+  the colour buffet, under the colours that were already there, so the
+  newcomers are easy to spot. Twelve highlights: Barbados Cherry, Barbera,
+  Dark Ruby, Ferrari Red, Volcano Flame, Cherry Pop, Dragon Fruit Pink,
+  Salmon Orange, Treetop, Adagio Mint, Ocean Spray and Glasier. Six dark
+  plates: Adagio Navy, Beetle Wing, Ocean Depths, Japanese Indigo, Adagio
+  Slate and Kaffeebraun. One paper, the butter-yellow Gelb, and one ink,
+  Kaffeebraun. They mix with everything above them. The twelve highlights
+  also join the end of the Minimal theme list.
 - **Spelling and grammar marks**, switched on from the dock: two letters
   after Add image, **S** and **G**, each lit while it is on. With S on,
   misspelt words get a red line underneath; with G on, grammar slips get a

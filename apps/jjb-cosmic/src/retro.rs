@@ -97,10 +97,35 @@ pub enum Theme {
     SlateBlue2,
     /// Jade, #9CD5C2.
     Jade,
+    // The November 2026 cards; `is_new` keeps them in the buffet's New rows.
+    /// Barbados cherry, Pantone 19-1757.
+    BarbadosCherry,
+    /// Barbera, #8E0319.
+    Barbera,
+    /// Dark ruby, 1815 C, #720013.
+    DarkRuby,
+    /// Ferrari red, #CE202A.
+    FerrariRed,
+    /// Volcano flame, Pantone 2035 C.
+    VolcanoFlame,
+    /// Cherry pop, #E52B50.
+    CherryPop,
+    /// Dragon fruit pink, #D90A6C.
+    DragonFruit,
+    /// Salmon orange, #FE621F.
+    SalmonOrange,
+    /// Treetop, Pantone 18-0135.
+    Treetop,
+    /// The mint dot of a metronome app, sampled #62D5C6.
+    AdagioMint,
+    /// Ocean spray, Pantone 7706 C.
+    OceanSpray,
+    /// "Glasier" as its card spells it, #114F99.
+    Glasier,
 }
 
 impl Theme {
-    pub const ALL: [Theme; 35] = [
+    pub const ALL: [Theme; 47] = [
         Theme::Phosphor,
         Theme::Amber,
         Theme::WordPerfect,
@@ -136,7 +161,39 @@ impl Theme {
         Theme::CanyonClay,
         Theme::SlateBlue2,
         Theme::Bluestone,
+        Theme::BarbadosCherry,
+        Theme::Barbera,
+        Theme::DarkRuby,
+        Theme::FerrariRed,
+        Theme::VolcanoFlame,
+        Theme::CherryPop,
+        Theme::DragonFruit,
+        Theme::SalmonOrange,
+        Theme::Treetop,
+        Theme::AdagioMint,
+        Theme::OceanSpray,
+        Theme::Glasier,
     ];
+
+    /// Added from the November 2026 cards: the buffet serves these in its
+    /// New section, under the highlights that were there before.
+    pub fn is_new(self) -> bool {
+        matches!(
+            self,
+            Theme::BarbadosCherry
+                | Theme::Barbera
+                | Theme::DarkRuby
+                | Theme::FerrariRed
+                | Theme::VolcanoFlame
+                | Theme::CherryPop
+                | Theme::DragonFruit
+                | Theme::SalmonOrange
+                | Theme::Treetop
+                | Theme::AdagioMint
+                | Theme::OceanSpray
+                | Theme::Glasier
+        )
+    }
 
     /// The minimal family shares one charcoal base; only its light colour
     /// differs, and the picker groups it under its own header.
@@ -167,6 +224,18 @@ impl Theme {
             Theme::Bluestone => hex(0x587284),
             Theme::SlateBlue2 => hex(0x466e88),
             Theme::Jade => hex(0x9cd5c2),
+            Theme::BarbadosCherry => hex(0xaa0a27),
+            Theme::Barbera => hex(0x8e0319),
+            Theme::DarkRuby => hex(0x720013),
+            Theme::FerrariRed => hex(0xce202a),
+            Theme::VolcanoFlame => hex(0xf20819),
+            Theme::CherryPop => hex(0xe52b50),
+            Theme::DragonFruit => hex(0xd90a6c),
+            Theme::SalmonOrange => hex(0xfe621f),
+            Theme::Treetop => hex(0x476a30),
+            Theme::AdagioMint => hex(0x62d5c6),
+            Theme::OceanSpray => hex(0x02547a),
+            Theme::Glasier => hex(0x114f99),
             // Exhaustive on purpose: a new variant must declare its side
             // here, or `palette()`'s catch-all would panic at runtime.
             Theme::Phosphor
@@ -227,6 +296,18 @@ impl Theme {
             Theme::Bluestone => "bluestone",
             Theme::SlateBlue2 => "slateblue2",
             Theme::Jade => "jade",
+            Theme::BarbadosCherry => "barbadoscherry",
+            Theme::Barbera => "barbera",
+            Theme::DarkRuby => "darkruby",
+            Theme::FerrariRed => "ferrarired",
+            Theme::VolcanoFlame => "volcanoflame",
+            Theme::CherryPop => "cherrypop",
+            Theme::DragonFruit => "dragonfruit",
+            Theme::SalmonOrange => "salmonorange",
+            Theme::Treetop => "treetop",
+            Theme::AdagioMint => "adagiomint",
+            Theme::OceanSpray => "oceanspray",
+            Theme::Glasier => "glasier",
         }
     }
 
@@ -278,6 +359,18 @@ impl Theme {
             Theme::Bluestone => "Bluestone",
             Theme::SlateBlue2 => "Slate Blue",
             Theme::Jade => "Jade",
+            Theme::BarbadosCherry => "Barbados Cherry",
+            Theme::Barbera => "Barbera",
+            Theme::DarkRuby => "Dark Ruby",
+            Theme::FerrariRed => "Ferrari Red",
+            Theme::VolcanoFlame => "Volcano Flame",
+            Theme::CherryPop => "Cherry Pop",
+            Theme::DragonFruit => "Dragon Fruit Pink",
+            Theme::SalmonOrange => "Salmon Orange",
+            Theme::Treetop => "Treetop",
+            Theme::AdagioMint => "Adagio Mint",
+            Theme::OceanSpray => "Ocean Spray",
+            Theme::Glasier => "Glasier",
         }
     }
 
@@ -320,6 +413,18 @@ impl Theme {
             Theme::Bluestone => "Pantone 18-4217, quarried blue-grey",
             Theme::SlateBlue2 => "slate grey's friend",
             Theme::Jade => "jade goes by many colour names",
+            Theme::BarbadosCherry => "Pantone 19-1757, the acerola off the tree",
+            Theme::Barbera => "#8E0319, a Piedmont red poured dark",
+            Theme::DarkRuby => "1815 C, a ruby that keeps the lights low",
+            Theme::FerrariRed => "#CE202A, Tomato's faster cousin",
+            Theme::VolcanoFlame => "Pantone 2035 C, straight from the crater",
+            Theme::CherryPop => "#E52B50, the bright one on the stalk",
+            Theme::DragonFruit => "#D90A6C, pitaya with the seeds picked out",
+            Theme::SalmonOrange => "#FE621F, straight off the fillet",
+            Theme::Treetop => "Pantone 18-0135, the view from the canopy",
+            Theme::AdagioMint => "#62D5C6, the dot on a metronome set to 72",
+            Theme::OceanSpray => "Pantone 7706 C, deeper than the name lets on",
+            Theme::Glasier => "#114F99, spelt the way its card spelt it",
         }
     }
 
@@ -612,17 +717,48 @@ pub enum Dark {
     Ink,
     /// Onyx, #353839.
     Onyx,
+    /// The metronome app's night navy, sampled #0D1E2E.
+    AdagioNavy,
+    /// Beetle wing, Pantone 20-0161, #003740.
+    BeetleWing,
+    /// Ocean depths, Pantone 3308 C, #133A41.
+    OceanDepths,
+    /// Japanese indigo, #264348.
+    JapaneseIndigo,
+    /// The metronome app's dial blue, sampled #2A4465.
+    AdagioSlate,
+    /// Kaffeebraun, coffee brown, #3F1D12.
+    Kaffeebraun,
 }
 
 impl Dark {
-    pub const ALL: [Dark; 6] = [
+    pub const ALL: [Dark; 12] = [
         Dark::Night,
         Dark::RichBlack,
         Dark::JetBlack,
         Dark::Graphite,
         Dark::Ink,
         Dark::Onyx,
+        Dark::AdagioNavy,
+        Dark::BeetleWing,
+        Dark::OceanDepths,
+        Dark::JapaneseIndigo,
+        Dark::AdagioSlate,
+        Dark::Kaffeebraun,
     ];
+
+    /// From the November 2026 cards; served in the buffet's New section.
+    pub fn is_new(self) -> bool {
+        matches!(
+            self,
+            Dark::AdagioNavy
+                | Dark::BeetleWing
+                | Dark::OceanDepths
+                | Dark::JapaneseIndigo
+                | Dark::AdagioSlate
+                | Dark::Kaffeebraun
+        )
+    }
 
     pub fn key(self) -> &'static str {
         match self {
@@ -632,6 +768,12 @@ impl Dark {
             Dark::Graphite => "graphite",
             Dark::Ink => "ink",
             Dark::Onyx => "onyx",
+            Dark::AdagioNavy => "adagionavy",
+            Dark::BeetleWing => "beetlewing",
+            Dark::OceanDepths => "oceandepths",
+            Dark::JapaneseIndigo => "japaneseindigo",
+            Dark::AdagioSlate => "adagioslate",
+            Dark::Kaffeebraun => "kaffeebraun",
         }
     }
 
@@ -650,6 +792,12 @@ impl Dark {
             Dark::Graphite => "Graphite",
             Dark::Ink => "Ink",
             Dark::Onyx => "Onyx",
+            Dark::AdagioNavy => "Adagio Navy",
+            Dark::BeetleWing => "Beetle Wing",
+            Dark::OceanDepths => "Ocean Depths",
+            Dark::JapaneseIndigo => "Japanese Indigo",
+            Dark::AdagioSlate => "Adagio Slate",
+            Dark::Kaffeebraun => "Kaffeebraun",
         }
     }
 
@@ -661,6 +809,12 @@ impl Dark {
             Dark::Graphite => hex(0x1f2124),
             Dark::Ink => hex(0x212529),
             Dark::Onyx => hex(0x353839),
+            Dark::AdagioNavy => hex(0x0d1e2e),
+            Dark::BeetleWing => hex(0x003740),
+            Dark::OceanDepths => hex(0x133a41),
+            Dark::JapaneseIndigo => hex(0x264348),
+            Dark::AdagioSlate => hex(0x2a4465),
+            Dark::Kaffeebraun => hex(0x3f1d12),
         }
     }
 }
@@ -699,10 +853,12 @@ pub enum Light {
     SubtleOffWhite,
     /// #FFFDF7 — a friendly paper-like warmth.
     WarmWhite,
+    /// "Gelb", a butter yellow, #F4DEAF.
+    Gelb,
 }
 
 impl Light {
-    pub const ALL: [Light; 15] = [
+    pub const ALL: [Light; 16] = [
         Light::LightGray,
         Light::Antiflash,
         Light::NearlyWhite,
@@ -718,7 +874,13 @@ impl Light {
         Light::Moon,
         Light::Quartz,
         Light::Bone,
+        Light::Gelb,
     ];
+
+    /// From the November 2026 cards; served in the buffet's New section.
+    pub fn is_new(self) -> bool {
+        matches!(self, Light::Gelb)
+    }
 
     pub fn key(self) -> &'static str {
         match self {
@@ -737,6 +899,7 @@ impl Light {
             Light::NearlyWhite => "nearlywhite",
             Light::SubtleOffWhite => "subtleoffwhite",
             Light::WarmWhite => "warmwhite",
+            Light::Gelb => "gelb",
         }
     }
 
@@ -764,6 +927,7 @@ impl Light {
             Light::NearlyWhite => "Nearly White",
             Light::SubtleOffWhite => "Subtle Off-White",
             Light::WarmWhite => "Warm White",
+            Light::Gelb => "Gelb",
         }
     }
 
@@ -784,6 +948,7 @@ impl Light {
             Light::NearlyWhite => hex(0xfafafa),
             Light::SubtleOffWhite => hex(0xf8f7f7),
             Light::WarmWhite => hex(0xfffdf7),
+            Light::Gelb => hex(0xf4deaf),
         }
     }
 }
@@ -802,10 +967,24 @@ pub enum Ink {
     Night,
     /// Steel slate, #57666D.
     Slate,
+    /// Kaffeebraun, coffee brown, #3F1D12.
+    Kaffeebraun,
 }
 
 impl Ink {
-    pub const ALL: [Ink; 5] = [Ink::Midnight, Ink::Ink, Ink::Navy, Ink::Night, Ink::Slate];
+    pub const ALL: [Ink; 6] = [
+        Ink::Midnight,
+        Ink::Ink,
+        Ink::Navy,
+        Ink::Night,
+        Ink::Slate,
+        Ink::Kaffeebraun,
+    ];
+
+    /// From the November 2026 cards; served in the buffet's New section.
+    pub fn is_new(self) -> bool {
+        matches!(self, Ink::Kaffeebraun)
+    }
 
     pub fn key(self) -> &'static str {
         match self {
@@ -814,6 +993,7 @@ impl Ink {
             Ink::Navy => "navy",
             Ink::Night => "night",
             Ink::Slate => "slate",
+            Ink::Kaffeebraun => "kaffeebraun",
         }
     }
 
@@ -831,6 +1011,7 @@ impl Ink {
             Ink::Navy => "Navy",
             Ink::Night => "Night",
             Ink::Slate => "Steel Slate",
+            Ink::Kaffeebraun => "Kaffeebraun",
         }
     }
 
@@ -841,6 +1022,7 @@ impl Ink {
             Ink::Navy => hex(0x023246),
             Ink::Night => hex(0x495057),
             Ink::Slate => hex(0x57666d),
+            Ink::Kaffeebraun => hex(0x3f1d12),
         }
     }
 }

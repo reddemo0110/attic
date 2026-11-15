@@ -4739,7 +4739,7 @@ impl AppModel {
             let mut chips: Vec<Element<'_, Message>> = Vec::new();
             let highlights = retro::Theme::ALL
                 .into_iter()
-                .filter(|t| t.is_minimal())
+                .filter(|t| t.is_minimal() && !t.is_new())
                 .map(retro::Highlight::Theme)
                 .chain(std::iter::once(retro::Highlight::Paper));
             for highlight in highlights {
@@ -4759,7 +4759,7 @@ impl AppModel {
             );
             let dark_active = !self.buffet_light_mode;
             let mut plates: Vec<Element<'_, Message>> = Vec::new();
-            for dark in retro::Dark::ALL {
+            for dark in retro::Dark::ALL.into_iter().filter(|d| !d.is_new()) {
                 plates.push(retro::chip(
                     dark.color(),
                     dark_active && self.buffet_dark == dark,
@@ -4777,7 +4777,7 @@ impl AppModel {
             col =
                 col.push(widget::container(widget::text(fl!("buffet-paper"))).padding([2, 0, 2, 0]));
             let mut papers: Vec<Element<'_, Message>> = Vec::new();
-            for light in retro::Light::ALL {
+            for light in retro::Light::ALL.into_iter().filter(|l| !l.is_new()) {
                 papers.push(retro::chip(
                     light.color(),
                     self.buffet_light_mode && self.buffet_light == light,
@@ -4789,7 +4789,7 @@ impl AppModel {
             col =
                 col.push(widget::container(widget::text(fl!("buffet-ink"))).padding([6, 0, 2, 0]));
             let mut inks: Vec<Element<'_, Message>> = Vec::new();
-            for ink in retro::Ink::ALL {
+            for ink in retro::Ink::ALL.into_iter().filter(|i| !i.is_new()) {
                 inks.push(retro::chip(
                     ink.color(),
                     self.buffet_light_mode && self.buffet_ink == ink,
@@ -4797,6 +4797,62 @@ impl AppModel {
                     Message::SetBuffetInk(ink),
                 ));
             }
+            col = col.push(widget::flex_row(inks).spacing(6));
+
+            // New: the latest cards, kept apart from the rows above so
+            // they are easy to find. Same four kinds, same clicks.
+            col = col.push(
+                widget::container(widget::text::heading(fl!("buffet-new")))
+                    .padding([10, 0, 0, 0]),
+            );
+            col = col.push(widget::text::caption(fl!("buffet-new-hint")));
+            let row_label = |label: String| {
+                widget::container(widget::text(label)).padding([6, 0, 2, 0])
+            };
+            let mut chips: Vec<Element<'_, Message>> = Vec::new();
+            for theme in retro::Theme::ALL.into_iter().filter(|t| t.is_new()) {
+                let highlight = retro::Highlight::Theme(theme);
+                chips.push(retro::chip(
+                    highlight.chip_color(),
+                    self.buffet_highlight == highlight,
+                    label_color,
+                    Message::SetBuffetHighlight(highlight),
+                ));
+            }
+            col = col.push(row_label(fl!("buffet-highlight")));
+            col = col.push(widget::flex_row(chips).spacing(6));
+            let mut plates: Vec<Element<'_, Message>> = Vec::new();
+            for dark in retro::Dark::ALL.into_iter().filter(|d| d.is_new()) {
+                plates.push(retro::chip(
+                    dark.color(),
+                    dark_active && self.buffet_dark == dark,
+                    label_color,
+                    Message::SetBuffetDark(dark),
+                ));
+            }
+            col = col.push(row_label(fl!("buffet-new-dark")));
+            col = col.push(widget::flex_row(plates).spacing(6));
+            let mut papers: Vec<Element<'_, Message>> = Vec::new();
+            for light in retro::Light::ALL.into_iter().filter(|l| l.is_new()) {
+                papers.push(retro::chip(
+                    light.color(),
+                    self.buffet_light_mode && self.buffet_light == light,
+                    label_color,
+                    Message::SetBuffetLight(light),
+                ));
+            }
+            col = col.push(row_label(fl!("buffet-paper")));
+            col = col.push(widget::flex_row(papers).spacing(6));
+            let mut inks: Vec<Element<'_, Message>> = Vec::new();
+            for ink in retro::Ink::ALL.into_iter().filter(|i| i.is_new()) {
+                inks.push(retro::chip(
+                    ink.color(),
+                    self.buffet_light_mode && self.buffet_ink == ink,
+                    label_color,
+                    Message::SetBuffetInk(ink),
+                ));
+            }
+            col = col.push(row_label(fl!("buffet-ink")));
             col = col.push(widget::flex_row(inks).spacing(6));
 
             let status = if self.buffet_on {

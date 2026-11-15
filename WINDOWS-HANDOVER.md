@@ -471,13 +471,13 @@ Every minimal theme is one highlight colour on a shared charcoal: `minimal(accen
 | mute | mix(bg, fg, 0.29) | | caret | accent |
 | h3 | fg | | title | mix(bg, fg, 0.63) |
 
-Highlights (the 19 minimal theme keys, picker order): tomato #ce2939 Tomato, steelblue #35637c Steel Blue, gojiberry #b22e3d Goji Berry, coquelicot #ec4908 Coquelicot, shamrock #71a56a Shamrock Green, seoulyellow #f6b65a Seoul Yellow, burntbrandy #f29538 Flame of Burnt Brandy, bluefjord #648ba8 Blue Fjord, azure #0099ff Azure, mikado #ffc40c Mikado, apricot #ffab40 Apricot, cyan #00a6cb Cyan, fuchsia #ff0080 Fuchsia, jade #9cd5c2 Jade, hollyhock #aa89bd Hollyhock, thistle #d8bfd8 Thistle, canyonclay #cf8578 Canyon Clay, slateblue2 #466e88 Slate Blue, bluestone #587284 Bluestone.
+Highlights (the 31 minimal theme keys, picker order; the last twelve are the buffet's New section): tomato #ce2939 Tomato, steelblue #35637c Steel Blue, gojiberry #b22e3d Goji Berry, coquelicot #ec4908 Coquelicot, shamrock #71a56a Shamrock Green, seoulyellow #f6b65a Seoul Yellow, burntbrandy #f29538 Flame of Burnt Brandy, bluefjord #648ba8 Blue Fjord, azure #0099ff Azure, mikado #ffc40c Mikado, apricot #ffab40 Apricot, cyan #00a6cb Cyan, fuchsia #ff0080 Fuchsia, jade #9cd5c2 Jade, hollyhock #aa89bd Hollyhock, thistle #d8bfd8 Thistle, canyonclay #cf8578 Canyon Clay, slateblue2 #466e88 Slate Blue, bluestone #587284 Bluestone, barbadoscherry #aa0a27 Barbados Cherry, barbera #8e0319 Barbera, darkruby #720013 Dark Ruby, ferrarired #ce202a Ferrari Red, volcanoflame #f20819 Volcano Flame, cherrypop #e52b50 Cherry Pop, dragonfruit #d90a6c Dragon Fruit Pink, salmonorange #fe621f Salmon Orange, treetop #476a30 Treetop, adagiomint #62d5c6 Adagio Mint, oceanspray #02547a Ocean Spray, glasier #114f99 Glasier.
 
-Dark plates (`Dark`, default richblack): night #0e0e10, richblack #171717, jetblack #1a1a1a, graphite #1f2124, ink #212529, onyx #353839.
+Dark plates (`Dark`, default richblack): night #0e0e10, richblack #171717, jetblack #1a1a1a, graphite #1f2124, ink #212529, onyx #353839; New section: adagionavy #0d1e2e Adagio Navy, beetlewing #003740 Beetle Wing, oceandepths #133a41 Ocean Depths, japaneseindigo #264348 Japanese Indigo, adagioslate #2a4465 Adagio Slate, kaffeebraun #3f1d12 Kaffeebraun.
 
-Light papers (`Light`, default pearlwhite, picker order): lightgray #f5f5f5, antiflash #f2f3f4 Antiflash White, nearlywhite #fafafa, subtleoffwhite #f8f7f7 Subtle Off-White, warmwhite #fffdf7, pearlwhite #fbfcf8, milk #fffff5, ivorywhite #fffcef, offwhite #faf9f6, cream #fafaf2, porcelain #f6f6f6, coastalivory #f6f1e8, moon #edede9, quartz #e1e6ea, bone #d4d4ce.
+Light papers (`Light`, default pearlwhite, picker order): lightgray #f5f5f5, antiflash #f2f3f4 Antiflash White, nearlywhite #fafafa, subtleoffwhite #f8f7f7 Subtle Off-White, warmwhite #fffdf7, pearlwhite #fbfcf8, milk #fffff5, ivorywhite #fffcef, offwhite #faf9f6, cream #fafaf2, porcelain #f6f6f6, coastalivory #f6f1e8, moon #edede9, quartz #e1e6ea, bone #d4d4ce; New section: gelb #f4deaf Gelb.
 
-Inks (`Ink`, default ink): midnight #060b11, ink #212529, navy #023246, night #495057, slate #57666d Steel Slate.
+Inks (`Ink`, default ink): midnight #060b11, ink #212529, navy #023246, night #495057, slate #57666d Steel Slate; New section: kaffeebraun #3f1d12 Kaffeebraun.
 
 Config: `buffet_on`, `buffet_mode` (dark/light), `buffet_highlight` (a minimal theme key), `buffet_dark`, `buffet_light`, `buffet_ink`. Choosing a theme in the Colour section switches the buffet off; clicking any chip switches it on.
 

@@ -1469,3 +1469,37 @@ image breaks a heading mid-word when the column is under ~100 px.
 - Not verified: the GNOME top bar vanishing. The nested harness has no
   panel; the fullscreen request itself is the standard one.
 
+## 2026-11-15 — Twenty more buffet colours, and a New section
+
+- The ask: fourteen colour cards and a short video (two more cards),
+  added to the buffet "underneath the current colour offering so I know
+  which ones are new".
+- Sorted by what each colour can do, since a card does not say:
+  - **Highlights** (twelve, minimal `Theme` variants as ever): Barbados
+    Cherry #AA0A27 (Pantone 19-1757), Barbera #8E0319, Dark Ruby #720013
+    (1815 C), Ferrari Red #CE202A, Volcano Flame #F20819 (Pantone 2035 C),
+    Cherry Pop #E52B50, Dragon Fruit Pink #D90A6C, Salmon Orange #FE621F,
+    Treetop #476A30 (Pantone 18-0135), Adagio Mint #62D5C6, Ocean Spray
+    #02547A (Pantone 7706 C), Glasier #114F99 (the card's spelling, kept).
+  - **Dark plates** (six): Adagio Navy #0D1E2E, Beetle Wing #003740
+    (Pantone 20-0161), Ocean Depths #133A41 (Pantone 3308 C), Japanese
+    Indigo #264348, Adagio Slate #2A4465, Kaffeebraun #3F1D12.
+  - **Paper**: Gelb #F4DEAF. **Ink**: Kaffeebraun #3F1D12, its partner on
+    the same card, so the card's pairing can be plated as shown.
+- The three Adagio colours have no card: they were sampled from a
+  screenshot of a metronome app (night navy, dial blue, mint dot) and
+  named after the tempo on its screen.
+- Ferrari Red is within a few steps of Tomato #CE2939. Earlier near-twins
+  were skipped; this one was sent on its own card, so it is in.
+- Several highlights are dark (Dark Ruby, Barbera, Glasier, Ocean Spray,
+  Treetop): they read well on paper and only faintly on a dark plate.
+  Left to the taster; a buffet does not police the plate.
+- "New" is a flag on the colour, not a second list: `is_new()` on `Theme`,
+  `Dark`, `Light` and `Ink`. The buffet's standing rows filter it out and
+  the New section (heading, hint, then Highlight / Dark plate / Paper /
+  Ink rows) filters it in. Clicks, rings and config keys are the same.
+  Moving a colour into the standing rows later is deleting it from
+  `is_new()`. Rejected: separate `NEW` arrays, which would have needed
+  every `from_key` to search two lists.
+- Checked with xshot: `buffet:cherrypop,oceandepths` and
+  `buffet:treetop,gelb,kaffeebraun`.
