@@ -63,6 +63,16 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   staying COSMIC blue.
 
 ### Fixed
+- **Selecting across pictures.** A selection used to stop at the first
+  picture, link card, divider or table, because the text on either side
+  of it was a separate editor. Now a drag carries on through them into
+  the text beyond, **Ctrl+A** takes the whole note, and **Shift** with
+  the up or down arrow steps over a picture too. Everything selected is
+  highlighted, pictures included. Copy or cut it and paste it into
+  another note and the pictures come along; typing or Delete replaces
+  the lot.
+- **Pasting a picture into the middle of a line** now puts it on a line
+  of its own, so it shows as a picture and not as its markdown.
 - **Dropping a picture from the file manager deleted the original.** The
   drop was treated as a move, so the file manager removed the source before
   Attic had copied it, and nothing appeared in the note. Drops are copies

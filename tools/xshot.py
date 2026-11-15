@@ -97,6 +97,13 @@ def main():
                     help="run inside a headless mutter of this size with its own Xwayland")
     ap.add_argument("--click", action="append", default=[], metavar="X,Y",
                     help="left-click here (window pixels) before capture; repeatable, in order")
+    ap.add_argument("--drag", action="append", default=[], metavar="X0,Y0,X1,Y1",
+                    help="press the left button at the first point, move to the second in "
+                         "small steps and release (window pixels), after the clicks; repeatable")
+    ap.add_argument("--act", action="append", default=[], metavar="KIND:ARG",
+                    help="one input after the clicks, drags and keys, in the order given: "
+                         "click:X,Y  drag:X0,Y0,X1,Y1  key:KEYSYM[+KEYSYM...] (a chord, "
+                         "e.g. key:0xffe3+0x63 for Ctrl+C); repeatable")
     ap.add_argument("--key", action="append", default=[], metavar="KEYSYM",
                     help="press and release this X keysym (decimal or 0x hex) after the clicks; repeatable")
     ap.add_argument("--notes-dir", default=None,
@@ -104,11 +111,11 @@ def main():
                          "real notes are never touched; pass the real path to see them)")
     args = ap.parse_args()
 
-    if (args.click or args.key) and not args.nested:
-        print("--click/--key need --nested: on the session's Xwayland they would hit the real desktop",
+    if (args.click or args.key or args.drag or args.act) and not args.nested:
+        print("--click/--key/--drag need --nested: on the session's Xwayland they would hit the real desktop",
               file=sys.stderr)
         return 2
-    if args.key:
+    if args.key or args.drag or args.act:
         args.click = args.click or []
     mutter = None
     bus = None
@@ -200,7 +207,7 @@ def main():
         time.sleep(args.settle)
         geom = win.get_geometry()
         root = d.screen().root
-        if args.click or args.key:
+        if args.click or args.key or args.drag or args.act:
             from gi.repository import Gio, GLib
             conn = Gio.DBusConnection.new_for_address_sync(
                 bus_addr,
@@ -231,7 +238,7 @@ def main():
             time.sleep(0.3)
             origin = win.translate_coords(root, 0, 0)
             ox, oy = -origin.x, -origin.y
-            for spec in args.click:
+            def do_click(spec):
                 x, y = (int(v) for v in spec.split(","))
                 call(session, sess_iface, "NotifyPointerMotionAbsolute",
                      GLib.Variant("(sdd)", (stream, float(ox + x), float(oy + y))))
@@ -243,13 +250,44 @@ def main():
                          GLib.Variant("(ib)", (272, pressed)))  # BTN_LEFT
                     time.sleep(0.1)
                 time.sleep(0.8)
-            for spec in args.key:
-                keysym = int(spec, 0)
-                for pressed in (True, False):
+            def do_drag(spec):
+                x0, y0, x1, y1 = (int(v) for v in spec.split(","))
+                def move(x, y):
+                    call(session, sess_iface, "NotifyPointerMotionAbsolute",
+                         GLib.Variant("(sdd)", (stream, float(ox + x), float(oy + y))))
+                move(x0, y0)
+                time.sleep(0.2)
+                call(session, sess_iface, "NotifyPointerButton", GLib.Variant("(ib)", (272, True)))
+                time.sleep(0.2)
+                # Relative steps while the button is down: absolute motion
+                # is not delivered to the X client during the hold.
+                steps = 24
+                for i in range(steps):
+                    call(session, sess_iface, "NotifyPointerMotionRelative",
+                         GLib.Variant("(dd)", ((x1 - x0) / steps, (y1 - y0) / steps)))
+                    time.sleep(0.04)
+                qp = root.query_pointer()
+                log("drag ended at", qp.root_x, qp.root_y, "wanted", ox + x1, oy + y1)
+                time.sleep(0.2)
+                call(session, sess_iface, "NotifyPointerButton", GLib.Variant("(ib)", (272, False)))
+                time.sleep(0.6)
+            def do_key(spec):
+                # A chord: press in order, release in reverse.
+                keysyms = [int(k, 0) for k in spec.split("+")]
+                for keysym, pressed in [(k, True) for k in keysyms] + [(k, False) for k in reversed(keysyms)]:
                     call(session, sess_iface, "NotifyKeyboardKeysym",
                          GLib.Variant("(ub)", (keysym, pressed)))
                     time.sleep(0.1)
                 time.sleep(0.5)
+            for spec in args.click:
+                do_click(spec)
+            for spec in args.drag:
+                do_drag(spec)
+            for spec in args.key:
+                do_key(spec)
+            for spec in args.act:
+                kind, _, arg = spec.partition(":")
+                {"click": do_click, "drag": do_drag, "key": do_key}[kind](arg)
         raw = win.get_image(0, 0, geom.width, geom.height, X.ZPixmap, 0xFFFFFFFF)
         img = Image.frombytes("RGB", (geom.width, geom.height), raw.data, "raw", "BGRX")
         if args.click:

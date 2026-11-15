@@ -95,6 +95,17 @@ pub enum Step {
     /// The highlighter pen over `sweep:line,col,line2,col2`: what a
     /// middle-button drag between those two points does.
     Sweep(usize, usize, usize, usize),
+    /// Select across blocks: `span:block,line,col,block,line,col` (anchor,
+    /// then head; both text blocks).
+    Span(usize, usize, usize, usize, usize, usize),
+    /// Press at a point in a text block and drag to another, in that
+    /// block's text coordinates (the second may lie outside it):
+    /// `drag:block,x0,y0,x1,y1`.
+    Drag(usize, i32, i32, i32, i32),
+    /// Paste text at the caret, as Ctrl+V would: `paste:text`.
+    Paste(String),
+    /// Print the cross-block selection's markdown on stdout (`SPAN …`).
+    SpanText,
     /// Set a cell of the first table block: `cell:row,col,text`.
     Cell(usize, usize, String),
     /// Open a cell for editing (and leave it open): `editcell:row,col`.
@@ -312,6 +323,34 @@ pub fn parse(script: &str) -> Vec<Step> {
                         _ => return None,
                     }
                 }
+                "span" => {
+                    let n: Vec<usize> = arg
+                        .trim()
+                        .split(',')
+                        .map(|n| n.trim().parse())
+                        .collect::<Result<_, _>>()
+                        .ok()?;
+                    match n.as_slice() {
+                        [ab, al, ac, hb, hl, hc] => Step::Span(*ab, *al, *ac, *hb, *hl, *hc),
+                        _ => return None,
+                    }
+                }
+                "drag" => {
+                    let (block, rest) = arg.trim().split_once(',')?;
+                    let n: Vec<i32> = rest
+                        .split(',')
+                        .map(|n| n.trim().parse())
+                        .collect::<Result<_, _>>()
+                        .ok()?;
+                    match n.as_slice() {
+                        [x0, y0, x1, y1] => {
+                            Step::Drag(block.trim().parse().ok()?, *x0, *y0, *x1, *y1)
+                        }
+                        _ => return None,
+                    }
+                }
+                "spantext" => Step::SpanText,
+                "paste" => Step::Paste(unescape(arg)),
                 "buffet" => {
                     let parts: Vec<&str> = arg.trim().split(',').map(str::trim).collect();
                     match parts.as_slice() {

@@ -1503,3 +1503,54 @@ image breaks a heading mid-word when the column is under ~100 px.
   every `from_key` to search two lists.
 - Checked with xshot: `buffet:cherrypop,oceandepths` and
   `buffet:treetop,gelb,kaffeebraun`.
+
+## 2026-11-15 — A selection that crosses blocks
+
+- The bug: "when I try to highlight text and images in the editor I can't
+  select images as well", and the ask: whatever is selected can be copied
+  and pasted into another note.
+- Cause: the body is a column of blocks and every text run is its own
+  editor (`Block::Text`), so a selection could not leave the block it
+  started in. Ctrl+A took one block; a drag stopped at the block's edge.
+- Fix: `Blocks::span` (`Span { anchor, anchor_pos, head }`), a selection
+  held above the editors and painted into each. Both ends are in text
+  blocks, which is always possible because `images::split` alternates
+  text and non-text. `set_span` gives every text block its share as an
+  ordinary cosmic-text selection (anchor to its end, the blocks between
+  whole, the head from its start), so drawing is the editors' own;
+  `show_selection` lets an unfocused editor draw it. Pictures, cards,
+  rules and tables inside wear a 30 % accent wash from `blocks_view`.
+- Three ways in, all in `App::span_action`, which sees every editor
+  action first: a drag (the widget now reports `Drag` past its bounds,
+  and the app finds the block under the pointer from each
+  `Content::bounds()`; over a picture the head is the start of the text
+  after it, or the end of the text before it going up, so touching a
+  picture takes it in), `SelectAll` when the note has more than one
+  block, and `Select(Up/Down/DocumentStart/DocumentEnd)` at a block's
+  edge. The highlighter (middle drag) stays inside its block.
+- Copy and cut: the block with the keyboard gets `copy_text`, the span's
+  markdown (`span_markdown`), and writes that instead of its own
+  selection. It is plain markdown with the `![…](assets/…)` lines in it,
+  so it pastes into any note in the same folder (assets are shared and
+  never deleted with a note) and into anything else as text. Rejected: a
+  private clipboard format; nothing would be gained and other apps would
+  get nothing.
+- Edits replace the span: `delete_span` joins the text before and after
+  on one line and the action (typed character, paste, Enter) then runs
+  at the seam. Any rebuild or resplit drops the span, so its block
+  indices can never go stale.
+- Paste: text holding a picture or table line gets line breaks around
+  it when the caret is inside a line (`paste_on_own_lines`); only a line
+  of its own becomes a block. A lone web address is left alone, since
+  pasting a link into a sentence is the common case.
+- Known limits: no auto-scroll while dragging past the window edge
+  (scroll with the wheel mid-drag, or use Ctrl+A / Shift+arrows); Shift
+  with Left/Right stops at a block's edge; Shift+click does not extend;
+  the dock's format buttons act on the focused block only.
+- Harness: steps `span:b,l,c,b,l,c`, `drag:block,x0,y0,x1,y1`,
+  `spantext` (prints `SPAN …`), `paste:text`; `xshot.py --drag` and
+  ordered `--act click:…|drag:…|key:a+b` (chords). The drag moves with
+  relative motion while the button is down: mutter does not deliver
+  absolute motion to the X client during the hold. Verified with real
+  input: drag across a picture, Ctrl+C, click, Ctrl+V.
+

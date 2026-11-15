@@ -26,6 +26,58 @@ pub struct Blocks {
     pub items: Vec<Block>,
     /// Index of the text block that has (or last had) keyboard focus.
     pub focused: usize,
+    /// A selection running across blocks, if there is one. Set through
+    /// `set_span`; any rebuild of the blocks drops it.
+    pub span: Option<Span>,
+}
+
+/// A selection that crosses block boundaries: text, the pictures, cards,
+/// rules and tables between, and more text. Each text block is its own
+/// editor and can only hold a selection inside itself, so the span is
+/// kept here and painted into every block it covers. Both ends sit in
+/// text blocks (text and non-text blocks alternate, so there always is
+/// one); the head's position is that block's caret.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    pub anchor: usize,
+    pub anchor_pos: text_editor::Position,
+    pub head: usize,
+}
+
+/// One end of a span: a text block and a place in it.
+pub type SpanEnd = (usize, text_editor::Position);
+
+const START: text_editor::Position = text_editor::Position { line: 0, column: 0 };
+
+/// The last position in a text block.
+pub fn end_pos(content: &Content) -> text_editor::Position {
+    let line = content.line_count().saturating_sub(1);
+    let column = content.line(line).map_or(0, |l| l.text.len());
+    text_editor::Position { line, column }
+}
+
+/// Byte offset of `pos` in `text` (lines split on `\n`), clamped to the
+/// text and to a character boundary.
+fn offset_of(text: &str, pos: text_editor::Position) -> usize {
+    let mut offset = 0;
+    for (i, line) in text.split('\n').enumerate() {
+        if i == pos.line {
+            let mut col = pos.column.min(line.len());
+            while !line.is_char_boundary(col) {
+                col -= 1;
+            }
+            return offset + col;
+        }
+        offset += line.len() + 1;
+    }
+    text.len()
+}
+
+/// Whether pasted text carries a line that must stand alone to become a
+/// block again: a picture or a table.
+pub fn has_block_lines(text: &str) -> bool {
+    text.split('\n')
+        .any(|l| images::parse_line(l).is_some() || crate::table::separator_line(l))
 }
 
 impl Default for Blocks {
@@ -49,7 +101,11 @@ impl Blocks {
                 Segment::Table(t) => Block::Table(t),
             })
             .collect();
-        Self { items, focused: 0 }
+        Self {
+            items,
+            focused: 0,
+            span: None,
+        }
     }
 
     /// Reassemble the markdown body.
@@ -171,6 +227,7 @@ impl Blocks {
     pub fn rebuild(&mut self, body: &str, focus: usize, cursor: Option<text_editor::Cursor>) {
         let fresh = Blocks::from_body(body);
         self.items = fresh.items;
+        self.span = None;
         self.focused = if matches!(self.items.get(focus), Some(Block::Text { .. })) {
             focus
         } else {
@@ -271,6 +328,147 @@ impl Blocks {
             content.perform(text_editor::Action::Move(motion));
         }
     }
+
+    // ----- selection across blocks -----
+
+    /// Select from `anchor` to `head`, painting each text block's share of
+    /// it. Ends in the same block make an ordinary selection there and no
+    /// span.
+    pub fn set_span(&mut self, anchor: SpanEnd, head: SpanEnd) {
+        if self.text(anchor.0).is_none() || self.text(head.0).is_none() {
+            return;
+        }
+        let (lo, hi) = (anchor.0.min(head.0), anchor.0.max(head.0));
+        let down = head.0 > anchor.0;
+        for (i, block) in self.items.iter_mut().enumerate() {
+            let Block::Text { content, .. } = block else {
+                continue;
+            };
+            let end = end_pos(content);
+            // (where the selection starts from, where the caret sits)
+            let (from, caret) = if anchor.0 == head.0 && i == anchor.0 {
+                (Some(anchor.1), head.1)
+            } else if anchor.0 == head.0 {
+                (None, content.cursor().position)
+            } else if i == anchor.0 {
+                (Some(anchor.1), if down { end } else { START })
+            } else if i == head.0 {
+                (Some(if down { START } else { end }), head.1)
+            } else if i > lo && i < hi {
+                (Some(START), end)
+            } else {
+                (None, content.cursor().position)
+            };
+            content.move_to(text_editor::Cursor {
+                position: caret,
+                selection: from.filter(|f| *f != caret),
+            });
+        }
+        self.span = (anchor.0 != head.0).then_some(Span {
+            anchor: anchor.0,
+            anchor_pos: anchor.1,
+            head: head.0,
+        });
+    }
+
+    /// Drop the span and the selections it painted; `keep` is a block
+    /// whose own selection is about to be set by the caller.
+    pub fn clear_span(&mut self, keep: Option<usize>) {
+        if self.span.take().is_none() {
+            return;
+        }
+        for (i, block) in self.items.iter_mut().enumerate() {
+            if let Block::Text { content, .. } = block
+                && Some(i) != keep
+            {
+                content.perform(text_editor::Action::ClearSelection);
+            }
+        }
+    }
+
+    /// The span's two ends in document order.
+    pub fn span_ends(&self) -> Option<(SpanEnd, SpanEnd)> {
+        let s = self.span?;
+        self.text(s.anchor)?;
+        let anchor = (s.anchor, s.anchor_pos);
+        let head = (s.head, self.text(s.head)?.cursor().position);
+        Some(if anchor.0 < head.0 {
+            (anchor, head)
+        } else {
+            (head, anchor)
+        })
+    }
+
+    /// The markdown the span covers, pictures and all, as it would read in
+    /// the file. Ends with a newline when the last thing selected is a
+    /// block, so its line is whole wherever it is pasted.
+    pub fn span_markdown(&self) -> Option<String> {
+        let ((lo, lo_pos), (hi, hi_pos)) = self.span_ends()?;
+        let mut parts: Vec<String> = Vec::new();
+        let mut ends_on_block = false;
+        for i in lo..=hi {
+            match &self.items[i] {
+                Block::Text { content, .. } => {
+                    let t = content_text(content);
+                    let from = if i == lo { offset_of(&t, lo_pos) } else { 0 };
+                    let to = if i == hi { offset_of(&t, hi_pos) } else { t.len() };
+                    // An empty text block is only the gap between two
+                    // blocks; it owns no line.
+                    if to > from {
+                        parts.push(t[from..to].to_owned());
+                        ends_on_block = false;
+                    }
+                }
+                Block::Image(r) => {
+                    parts.push(r.to_markdown());
+                    ends_on_block = true;
+                }
+                Block::Rule(t) => {
+                    parts.push(t.clone());
+                    ends_on_block = true;
+                }
+                Block::Link(l) => {
+                    parts.push(l.to_markdown());
+                    ends_on_block = true;
+                }
+                Block::Table(t) => {
+                    parts.push(t.to_markdown());
+                    ends_on_block = true;
+                }
+            }
+        }
+        let mut out = parts.join("\n");
+        if ends_on_block {
+            out.push('\n');
+        }
+        Some(out)
+    }
+
+    /// Delete everything the span covers; the text before and after it
+    /// meet on one line with the caret at the seam. Returns whether there
+    /// was a span.
+    pub fn delete_span(&mut self) -> bool {
+        let Some(((lo, lo_pos), (hi, hi_pos))) = self.span_ends() else {
+            return false;
+        };
+        let mut segs = self.segments();
+        let (Segment::Text(a), Segment::Text(b)) = (&segs[lo], &segs[hi]) else {
+            return false;
+        };
+        let merged = format!("{}{}", &a[..offset_of(a, lo_pos)], &b[offset_of(b, hi_pos)..]);
+        segs.splice(lo..=hi, [Segment::Text(merged)]);
+        let body = images::join(&segs);
+        self.rebuild(
+            &body,
+            lo,
+            Some(text_editor::Cursor {
+                position: lo_pos,
+                selection: None,
+            }),
+        );
+        true
+    }
+
     /// Body line at which each block starts. Empty text blocks own no line
     /// (`images::join` skips them), so they share the next block's offset.
     /// The final entry is the total line count.
@@ -322,6 +520,7 @@ impl Blocks {
             })
             .unwrap_or((0, 0));
         self.items = fresh.items;
+        self.span = None;
         let offsets = self.line_offsets();
         // The text block that owns the caret's line (a rule owns its own
         // line, so a caret "on" it lands in the text after it).
@@ -537,6 +736,67 @@ fn content_text(content: &Content) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pos(line: usize, column: usize) -> text_editor::Position {
+        text_editor::Position { line, column }
+    }
+
+    #[test]
+    fn span_copies_text_and_pictures_and_deletes_them() {
+        let body = "alpha beta\n![p](assets/p.png)\ngamma delta\n---\nomega\n";
+        let mut b = Blocks::from_body(body);
+        // Text, Image, Text, Rule, Text.
+        assert_eq!(b.items.len(), 5);
+        // From "beta" down to just after "gamma".
+        b.set_span((0, pos(0, 6)), (2, pos(0, 5)));
+        assert!(b.span.is_some());
+        assert_eq!(
+            b.span_markdown().as_deref(),
+            Some("beta\n![p](assets/p.png)\ngamma")
+        );
+        // Each block holds its share: the anchor to its end, the head
+        // from its start.
+        assert_eq!(b.text(0).unwrap().selection().as_deref(), Some("beta"));
+        assert_eq!(b.text(2).unwrap().selection().as_deref(), Some("gamma"));
+        assert_eq!(b.text(4).unwrap().selection(), None);
+        // Selected upward, it reads the same.
+        b.set_span((2, pos(0, 5)), (0, pos(0, 6)));
+        assert_eq!(
+            b.span_markdown().as_deref(),
+            Some("beta\n![p](assets/p.png)\ngamma")
+        );
+        assert!(b.delete_span());
+        assert_eq!(b.body(), "alpha  delta\n---\nomega\n");
+        assert_eq!(b.span, None);
+        assert_eq!(b.focused, 0);
+        assert_eq!(b.text(0).unwrap().cursor().position, pos(0, 6));
+    }
+
+    #[test]
+    fn span_ending_on_a_block_keeps_its_line_whole() {
+        let mut b = Blocks::from_body("one\n![p](assets/p.png)\ntwo\n");
+        // From the end of "one" to the start of "two": only the picture.
+        b.set_span((0, pos(0, 3)), (2, pos(0, 0)));
+        assert_eq!(b.span_markdown().as_deref(), Some("![p](assets/p.png)\n"));
+        assert!(has_block_lines(&b.span_markdown().unwrap()));
+        // The whole note.
+        let end = end_pos(b.text(2).unwrap());
+        b.set_span((0, pos(0, 0)), (2, end));
+        assert_eq!(
+            b.span_markdown().as_deref(),
+            Some("one\n![p](assets/p.png)\ntwo")
+        );
+        // Ends in one block are an ordinary selection, not a span.
+        b.set_span((2, pos(0, 0)), (2, pos(0, 2)));
+        assert_eq!(b.span, None);
+        assert_eq!(b.text(2).unwrap().selection().as_deref(), Some("tw"));
+        assert_eq!(b.text(0).unwrap().selection(), None);
+        // Clearing puts every block's selection away.
+        b.set_span((0, pos(0, 0)), (2, pos(0, 1)));
+        b.clear_span(None);
+        assert_eq!(b.text(0).unwrap().selection(), None);
+        assert_eq!(b.text(2).unwrap().selection(), None);
+    }
 
     #[test]
     fn body_round_trips_and_images_insert_remove() {

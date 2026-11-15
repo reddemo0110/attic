@@ -58,6 +58,12 @@ pub struct RichEditor<'a, Message> {
     /// Trip time (seconds) and landing exponent for the drop marker's
     /// glide (`None` = snap).
     drop_anim: Option<(f32, f32)>,
+    /// Paint the selection even without keyboard focus: this block is
+    /// part of a selection that runs across blocks.
+    show_selection: bool,
+    /// What Copy and Cut put on the clipboard instead of this block's own
+    /// selection: the whole cross-block selection, as markdown.
+    copy_text: Option<String>,
 }
 
 impl<'a, Message> RichEditor<'a, Message> {
@@ -79,7 +85,19 @@ impl<'a, Message> RichEditor<'a, Message> {
             on_caret: None,
             drop_label: String::new(),
             drop_anim: None,
+            show_selection: false,
+            copy_text: None,
         }
+    }
+
+    pub fn show_selection(mut self, show: bool) -> Self {
+        self.show_selection = show;
+        self
+    }
+
+    pub fn copy_text(mut self, text: Option<String>) -> Self {
+        self.copy_text = text;
+        self
     }
 
     pub fn drop_anim(mut self, anim: Option<(f32, f32)>) -> Self {
@@ -496,10 +514,21 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if state.drag_click == Some(mouse::click::Kind::Single)
-                    && let Some(p) = cursor.position_in(bounds)
-                {
-                    shell.publish(on_action(Action::Drag(p - text_origin)));
+                if state.drag_click == Some(mouse::click::Kind::Single) {
+                    // A selecting drag carries on past the block's edge
+                    // (the point may lie outside the bounds): the app
+                    // continues the selection into the neighbours. The
+                    // highlighter stays inside its block.
+                    let p = if state.mark_drag {
+                        cursor.position_in(bounds)
+                    } else {
+                        cursor
+                            .position()
+                            .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y))
+                    };
+                    if let Some(p) = p {
+                        shell.publish(on_action(Action::Drag(p - text_origin)));
+                    }
                 }
             }
             Event::Keyboard(keyboard::Event::KeyPressed {
@@ -527,12 +556,16 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
                             captured = false;
                         }
                         Binding::Copy => {
-                            if let Some(s) = self.content.selection() {
+                            if let Some(s) =
+                                self.copy_text.clone().or_else(|| self.content.selection())
+                            {
                                 clipboard.write(clipboard::Kind::Standard, s);
                             }
                         }
                         Binding::Cut => {
-                            if let Some(s) = self.content.selection() {
+                            if let Some(s) =
+                                self.copy_text.clone().or_else(|| self.content.selection())
+                            {
                                 clipboard.write(clipboard::Kind::Standard, s);
                                 shell.publish(on_action(Action::Edit(Edit::Delete)));
                             }
@@ -650,7 +683,9 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
                 Background::Color(p.dim),
             );
         }
-        if let (Some(_), Highlight::Range(ranges)) = (&state.focus, &highlight) {
+        if let (true, Highlight::Range(ranges)) =
+            (state.focus.is_some() || self.show_selection, &highlight)
+        {
             for r in ranges {
                 if let Some(r) = text_bounds.intersection(&(*r + origin)) {
                     renderer.fill_quad(

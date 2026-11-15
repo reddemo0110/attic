@@ -31,6 +31,10 @@ const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 /// How long after the last keystroke we write the note to disk.
 const AUTOSAVE_DELAY: Duration = Duration::from_millis(600);
+/// Padding inside a text block (left/right, top/bottom): the text's origin
+/// within its editor, needed to turn a pointer position into one in a
+/// neighbouring block.
+const TEXT_PAD: (f32, f32) = (10.0, 6.0);
 /// Sync this long after the last local change.
 const SYNC_AFTER_SAVE: Duration = Duration::from_secs(3);
 /// And at least this often while signed in, to pick up other devices.
@@ -2914,6 +2918,18 @@ impl AppModel {
                     ?action,
                     "editor action"
                 );
+                // A selection that runs across blocks is handled whole.
+                if let Some(task) = self.span_action(block, &action) {
+                    return task;
+                }
+                // A pasted picture or table needs lines of its own to
+                // become a block again.
+                let action = match action {
+                    Action::Edit(Edit::Paste(text)) => {
+                        Action::Edit(Edit::Paste(self.paste_on_own_lines(block, text)))
+                    }
+                    other => other,
+                };
                 // A widget losing focus emits ClearSelection; only real
                 // interaction with a block moves the caret there.
                 let claims_focus =
@@ -6165,6 +6181,219 @@ impl AppModel {
         }
     }
 
+    /// The part of an editor action that concerns a selection across
+    /// blocks: starting one (a drag that leaves its block, Ctrl+A, Shift
+    /// with an arrow past a block's edge), growing it, replacing it by
+    /// typing, and putting it away. `None` hands the action on to the
+    /// ordinary single-block handling.
+    fn span_action(
+        &mut self,
+        block: usize,
+        action: &text_editor::Action,
+    ) -> Option<Task<cosmic::Action<Message>>> {
+        use text_editor::{Action, Edit, Motion, Position};
+        const START: Position = Position { line: 0, column: 0 };
+        let span = self.blocks.span;
+        match action {
+            Action::Scroll { .. } => None,
+            Action::Drag(p) => {
+                let anchor = match span {
+                    Some(s) => (s.anchor, s.anchor_pos),
+                    None => {
+                        let c = self.blocks.text(block)?.cursor();
+                        (block, c.selection.unwrap_or(c.position))
+                    }
+                };
+                // The pointer in the note's own coordinates, then the
+                // text block it is over (or the nearest one that way).
+                let own = self.blocks.text(block)?.bounds();
+                let (x, y) = (own.x + TEXT_PAD.0 + p.x, own.y + TEXT_PAD.1 + p.y);
+                let texts: Vec<(usize, cosmic::iced::Rectangle)> = self
+                    .blocks
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, b)| match b {
+                        Block::Text { content, .. } => Some((i, content.bounds())),
+                        _ => None,
+                    })
+                    .collect();
+                let from = texts.iter().find(|(i, _)| *i == anchor.0)?.1;
+                // (block, Some(point inside it) or None with `true` for
+                // its start, `false` for its end)
+                let over = texts
+                    .iter()
+                    .find(|(_, r)| y >= r.y && y < r.y + r.height)
+                    .map(|(i, r)| (*i, Some(*r), true));
+                let (target, inside, at_start) = over.unwrap_or_else(|| {
+                    if y >= from.y + from.height {
+                        // Below: over a picture, the text after it from
+                        // its start, so the picture is taken in.
+                        texts
+                            .iter()
+                            .find(|(i, r)| *i > anchor.0 && y < r.y)
+                            .map_or((self.blocks.last_text(), None, false), |(i, _)| {
+                                (*i, None, true)
+                            })
+                    } else {
+                        texts
+                            .iter()
+                            .rev()
+                            .find(|(i, r)| *i < anchor.0 && y >= r.y + r.height)
+                            .map_or((0, None, true), |(i, _)| (*i, None, false))
+                    }
+                });
+                if target == anchor.0 {
+                    // Back home: an ordinary drag again, from the anchor.
+                    if span.is_some() {
+                        self.blocks.clear_span(Some(target));
+                        if let Some(c) = self.blocks.text_mut(target) {
+                            c.move_to(text_editor::Cursor {
+                                position: anchor.1,
+                                selection: None,
+                            });
+                        }
+                    }
+                    return None;
+                }
+                let content = self.blocks.text_mut(target)?;
+                let head = match inside {
+                    Some(r) => {
+                        content.perform(Action::Click(cosmic::iced::Point::new(
+                            x - r.x - TEXT_PAD.0,
+                            y - r.y - TEXT_PAD.1,
+                        )));
+                        content.cursor().position
+                    }
+                    None if at_start => START,
+                    None => crate::blocks::end_pos(content),
+                };
+                self.blocks.set_span(anchor, (target, head));
+                Some(Task::none())
+            }
+            // Ctrl+A takes the whole note, not just the block the caret is in.
+            Action::SelectAll if self.blocks.items.len() > 1 => {
+                let last = self.blocks.last_text();
+                let end = crate::blocks::end_pos(self.blocks.text(last)?);
+                self.blocks.set_span((0, START), (last, end));
+                Some(Task::none())
+            }
+            // Shift with an arrow: past a block's edge the selection
+            // steps over the picture into the next text.
+            Action::Select(motion) => {
+                let (anchor, head) = match span {
+                    Some(s) => ((s.anchor, s.anchor_pos), s.head),
+                    None => {
+                        let c = self.blocks.text(block)?.cursor();
+                        ((block, c.selection.unwrap_or(c.position)), block)
+                    }
+                };
+                let content = self.blocks.text(head)?;
+                let pos = content.cursor().position;
+                let on_last_line = pos.line + 1 >= content.line_count();
+                let to = |j: usize, start: bool| {
+                    let c = self.blocks.text(j)?;
+                    Some((j, if start { START } else { crate::blocks::end_pos(c) }))
+                };
+                let dest = match motion {
+                    Motion::Up if pos.line == 0 => {
+                        self.blocks.text_before(head).and_then(|j| to(j, false))
+                    }
+                    Motion::Down if on_last_line => {
+                        self.blocks.text_after(head).and_then(|j| to(j, true))
+                    }
+                    Motion::DocumentStart if self.blocks.text_before(head).is_some() => {
+                        to(0, true)
+                    }
+                    Motion::DocumentEnd if self.blocks.text_after(head).is_some() => {
+                        to(self.blocks.last_text(), false)
+                    }
+                    _ => None,
+                };
+                let dest = match (dest, span) {
+                    (Some(d), _) => d,
+                    (None, None) => return None,
+                    (None, Some(_)) => {
+                        // Inside the head's block: move its caret alone.
+                        let c = self.blocks.text_mut(head)?;
+                        c.move_to(text_editor::Cursor {
+                            position: pos,
+                            selection: None,
+                        });
+                        c.perform(Action::Move(*motion));
+                        (head, c.cursor().position)
+                    }
+                };
+                self.blocks.set_span(anchor, dest);
+                if let Some(c) = self.blocks.text(dest.0) {
+                    c.request_reveal();
+                }
+                Some(Task::none())
+            }
+            // Typing, pasting or deleting replaces everything selected.
+            Action::Edit(edit) if span.is_some() => {
+                if !self.current.as_ref().is_some_and(|n| !n.trashed) {
+                    return Some(Task::none());
+                }
+                let ((lo, _), _) = self.blocks.span_ends()?;
+                self.record(EditKind::Other);
+                self.blocks.delete_span();
+                self.dirty = true;
+                self.last_edit = Instant::now();
+                let typed = match edit {
+                    Edit::Backspace | Edit::Delete | Edit::Indent | Edit::Unindent => Task::none(),
+                    _ => self.update(Message::Editor(lo, action.clone())),
+                };
+                Some(Task::batch([typed, self.queue_previews(), self.focus_editor()]))
+            }
+            // The editor lost the keyboard: nothing stays selected.
+            Action::ClearSelection => {
+                self.blocks.clear_span(None);
+                None
+            }
+            // A click or a plain caret move puts the span away.
+            _ => {
+                self.blocks.clear_span(Some(block));
+                None
+            }
+        }
+    }
+
+    /// Pasted text that holds a picture or a table, given line breaks
+    /// around it where the caret sits inside a line: such a line only
+    /// becomes a block when it stands alone.
+    fn paste_on_own_lines(&self, block: usize, text: Arc<String>) -> Arc<String> {
+        if !crate::blocks::has_block_lines(&text) {
+            return text;
+        }
+        let Some(content) = self.blocks.text(block) else {
+            return text;
+        };
+        let cursor = content.cursor();
+        // With a selection the paste lands at whichever end comes first.
+        let at = match cursor.selection {
+            Some(s) if (s.line, s.column) < (cursor.position.line, cursor.position.column) => s,
+            _ => cursor.position,
+        };
+        let line = content.line(at.line).map(|l| l.text.into_owned()).unwrap_or_default();
+        let col = at.column.min(line.len());
+        let before = line.get(..col).is_some_and(|t| !t.trim().is_empty());
+        let after = cursor.selection.is_none()
+            && line.get(col..).is_some_and(|t| !t.trim().is_empty());
+        let mut out = String::with_capacity(text.len() + 2);
+        if before {
+            out.push('\n');
+        }
+        out.push_str(&text);
+        if after && !out.ends_with('\n') {
+            out.push('\n');
+        } else if !after && out.ends_with('\n') && cursor.selection.is_none() {
+            // The line ends here anyway: no blank line left behind.
+            out.pop();
+        }
+        Arc::new(out)
+    }
+
     fn focus_editor(&self) -> Task<cosmic::Action<Message>> {
         // Through the shared Content, not a focus operation: an id-targeted
         // operation unfocuses every non-matching widget, and a stale id
@@ -6224,6 +6453,32 @@ impl AppModel {
                 self.text_block(p, i, content, id, trashed, i == last_text)
             }
         };
+        // Pictures, cards, rules and tables inside a selection across
+        // blocks wear the selection colour, as the text around them does.
+        let spanned = self
+            .blocks
+            .span_ends()
+            .map(|((lo, _), (hi, _))| lo..=hi);
+        let wash = p.accent.scale_alpha(0.3);
+        let selected = |i: usize, el: Element<'a, Message>| -> Element<'a, Message> {
+            if !spanned.as_ref().is_some_and(|r| r.contains(&i)) {
+                return el;
+            }
+            let tint = widget::container(widget::Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .class(cosmic::theme::Container::custom(move |_| {
+                    widget::container::Style {
+                        background: Some(cosmic::iced::Background::Color(wash)),
+                        border: cosmic::iced::Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }));
+            cosmic::iced::widget::stack([el, tint.into()]).into()
+        };
         let mut col = widget::column::with_capacity(items.len() + 1)
             .spacing(6)
             .width(Length::Fill);
@@ -6235,11 +6490,11 @@ impl AppModel {
                     i += 1;
                 }
                 Block::Table(t) => {
-                    col = col.push(self.table_el(p, i, t));
+                    col = col.push(selected(i, self.table_el(p, i, t)));
                     i += 1;
                 }
                 Block::Rule(_) => {
-                    let rule = retro::rule_block(p, self.rule_size.rule_px());
+                    let rule = selected(i, retro::rule_block(p, self.rule_size.rule_px()));
                     if drag.is_some() {
                         let slot = |line: usize| {
                             widget::mouse_area(
@@ -6265,7 +6520,7 @@ impl AppModel {
                     i += 1;
                 }
                 Block::Link(l) => {
-                    let card = self.link_card(p, l, i);
+                    let card = selected(i, self.link_card(p, l, i));
                     if drag.is_some() {
                         let slot = |line: usize| {
                             widget::mouse_area(
@@ -6295,6 +6550,7 @@ impl AppModel {
                         Some(d) => self.drag_image_card(p, r, i, offsets[i], d.block == i),
                         None => self.image_card(p, r, i),
                     };
+                    let card = selected(i, card);
                     match r.align {
                         Align::Center => {
                             col = col.push(crate::probe::probe(
@@ -6404,8 +6660,17 @@ impl AppModel {
                 String::new()
             })
             .size(f32::from(self.font_size))
-            .padding([6, 10])
-            .drop_label(fl!("drop-here"));
+            .padding([TEXT_PAD.1, TEXT_PAD.0])
+            .drop_label(fl!("drop-here"))
+            // Part of a selection across blocks: paint this block's share
+            // without the keyboard, and let the block that has the keys
+            // copy the whole of it.
+            .show_selection(self.blocks.span.is_some())
+            .copy_text(if block == self.blocks.focused {
+                self.blocks.span_markdown()
+            } else {
+                None
+            });
         if is_last {
             editor = editor.min_height(220.0);
         }
@@ -8170,6 +8435,29 @@ impl AppModel {
                         selection,
                     });
                 }
+                Task::none()
+            }
+            Step::Span(ab, al, ac, hb, hl, hc) => {
+                let at = |line, column| text_editor::Position { line, column };
+                self.blocks.set_span((ab, at(al, ac)), (hb, at(hl, hc)));
+                Task::none()
+            }
+            Step::Drag(block, x0, y0, x1, y1) => {
+                let _ = self.update(Message::Editor(
+                    block,
+                    text_editor::Action::Click(cosmic::iced::Point::new(x0 as f32, y0 as f32)),
+                ));
+                self.update(Message::Editor(
+                    block,
+                    text_editor::Action::Drag(cosmic::iced::Point::new(x1 as f32, y1 as f32)),
+                ))
+            }
+            Step::Paste(text) => self.update(Message::Editor(
+                self.blocks.focused,
+                text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new(text))),
+            )),
+            Step::SpanText => {
+                println!("SPAN {:?}", self.blocks.span_markdown());
                 Task::none()
             }
             Step::Sweep(line, col, l2, c2) => {
