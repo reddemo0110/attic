@@ -19,9 +19,19 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   waiting, fetching page 2 of 5, done (with a link to open the note), or
   why it failed. Captures run in the background, so you can keep writing,
   and a note started while you are in a folder is filed there. Text
-  only for now: pictures are left out. Pages that need a login, and
-  pages that only fill in their text with JavaScript, cannot be captured
-  yet; the ticket says so.
+  only for now: pictures are left out.
+- **Capture from sites you log in to.** When a page sits behind a login,
+  its ticket offers **Log in with Firefox**: a Firefox window opens on
+  that site, you log in as you always do, and when you close the window
+  the capture runs again and gets the page. Attic remembers the site, so
+  later captures from it need no second login until the site logs you
+  out. This uses the Firefox already on your computer with a profile of
+  Attic's own; your everyday Firefox, its tabs, history and logins are
+  not touched, and your password never passes through Attic. A finished
+  ticket also has "Not the whole text? Log in and capture again" for
+  sites that show a teaser to strangers; the fuller text replaces the
+  teaser in the same note. Pages that only fill in their text with
+  JavaScript are read through Firefox as well, automatically.
 - **Duplicate a note**: right-click a note in the list and choose
   *duplicate*. The copy opens straight away with " copy" after its
   title, pictures and all, and sits in the same folders as the original

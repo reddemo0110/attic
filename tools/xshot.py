@@ -102,7 +102,7 @@ def main():
                          "small steps and release (window pixels), after the clicks; repeatable")
     ap.add_argument("--act", action="append", default=[], metavar="KIND:ARG",
                     help="one input after the clicks, drags and keys, in the order given: "
-                         "click:X,Y  rclick:X,Y  drag:X0,Y0,X1,Y1  key:KEYSYM[+KEYSYM...] (a chord, "
+                         "click:X,Y  rclick:X,Y  wait:SECONDS  drag:X0,Y0,X1,Y1  key:KEYSYM[+KEYSYM...] (a chord, "
                          "e.g. key:0xffe3+0x63 for Ctrl+C); repeatable")
     ap.add_argument("--key", action="append", default=[], metavar="KEYSYM",
                     help="press and release this X keysym (decimal or 0x hex) after the clicks; repeatable")
@@ -288,7 +288,8 @@ def main():
             for spec in args.act:
                 kind, _, arg = spec.partition(":")
                 {"click": do_click, "drag": do_drag, "key": do_key,
-                 "rclick": lambda a: do_click(a, 273)}[kind](arg)  # BTN_RIGHT
+                 "rclick": lambda a: do_click(a, 273),  # BTN_RIGHT
+                 "wait": lambda a: time.sleep(float(a))}[kind](arg)
         raw = win.get_image(0, 0, geom.width, geom.height, X.ZPixmap, 0xFFFFFFFF)
         img = Image.frombytes("RGB", (geom.width, geom.height), raw.data, "raw", "BGRX")
         if args.click:

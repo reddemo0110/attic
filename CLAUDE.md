@@ -40,7 +40,7 @@ Toolchain lives in `~/.cargo/bin` (rustup); make sure it's on `PATH`.
   For anything the script hook cannot reach (the menu bar, popovers, hover)
   use `--nested 1600x1000`: the app runs in a private headless mutter with its
   own Xwayland, and `--click X,Y` (window pixels, repeatable) / `--drag X0,Y0,X1,Y1` / `--key KEYSYM`
-  drive it through mutter's virtual seat (`--act click:…`, `--act rclick:…`, `--act drag:…`, `--act key:0xffe3+0x63` run in the order given, chords included); popups in their own X window are
+  drive it through mutter's virtual seat (`--act click:…`, `--act rclick:…`, `--act wait:SECONDS`, `--act drag:…`, `--act key:0xffe3+0x63` run in the order given, chords included); popups in their own X window are
   composited in. Use `--wait 9` there (the window is mapped late) and spend
   the first click on an empty spot (`--click 1000,600`): the X11 window gets
   focus and pointer only from a click, so the first one never reaches a widget.
@@ -89,6 +89,7 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
 - `src/images.rs` — image reference format, assets store, retro pixel treatments.
 - `src/links.rs` — link cards: `[text](url)` / bare address / attached file on a line of its own; Open Graph scrape (`ureq`), preview cache under `assets/.links/` (derived, disposable), `JJB_LINK_FIXTURE=page.html` serves a local page instead of the network.
 - `src/capture.rs` (core) — web capture: `capture()` fetches an address through a fetcher closure, keeps the article (`dom_smoothie`), converts it to markdown (`htmd`), and follows "page 2 of 5" pagination (`next_link`, guarded by `same_article`); `note_body` is the note it becomes. The app's panel is `ContextPage::Capture` with `Ticket`s. `JJB_CAPTURE_PROBE=<address> cargo test -p jjb-core live_probe -- --ignored --nocapture` tries a real page.
+- `src/browser.rs` (core) — capture through the installed Firefox for pages behind a login or built by JavaScript: a Marionette client (`Firefox::launch`, `page_html`), Attic's own profile at `<data dir>/capture-firefox`, `login_window`, the remembered sites, and `capture_with_fallback` / `capture_auto`, which choose between the plain fetch and Firefox. `JJB_BROWSER_PROBE=<address> cargo test -p jjb-core browser_probe -- --ignored --nocapture` tries a real page.
 - `src/blocks.rs` — the note body as text/image blocks (one editor per text run).
 - `src/glyph.rs` — folder icons a tag can wear instead of `#`: seven styles (Boxicons, Iconoir, Solar, Myna UI, Majesticons, Pixelarticons, Duoicons; bundled as SVG paths from Iconify, Boxicons is the fallback), chosen in Options → Icon. Generated — regenerate rather than hand-edit the bodies.
 - `src/dockicon.rs` — the dock's action icons in the same seven sets, drawn in

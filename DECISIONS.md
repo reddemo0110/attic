@@ -1627,3 +1627,52 @@ image breaks a heading mid-word when the column is under ~100 px.
   `tools/fixtures/capture`.
 - Known limits: JavaScript-built pages, infinite scroll, pictures.
 - Harness: `JJB_CAPTURE_FIXTURE=dir`, step `capture:<addresses>`.
+
+## 2026-11-16 — Capture behind a login: the Firefox route (stage 4)
+
+- The ask: "if there is a login can we make it so when I log in then I
+  can go from there? I have some pages I pay to see." The user's
+  browser is Firefox (the Fedora package, 160).
+- `browser.rs` in the core drives the installed Firefox over
+  **Marionette**, the remote-control server built into Firefox
+  (`--marionette`; `<length>:<json>` packets on a local port chosen per
+  launch and written to the profile's `user.js`). Rejected: geckodriver
+  (a second program to install; Fedora does not package it), a bundled
+  browser, and reading the cookies out of the user's everyday Firefox
+  (breaks when the store changes, no help with JavaScript pages, and
+  Attic would be reading the user's private browser data).
+- A profile of Attic's own, `<data dir>/capture-firefox`, beside the
+  index: per user, never synced. `--no-remote` keeps it apart from a
+  running everyday Firefox. Logging in is an ordinary window on that
+  profile (`login_window`, waits for the window to be closed); captures
+  run the same profile `--headless`. The prefs written at every launch
+  switch off first-run pages and switch on session restore, so a login
+  that lasts "until the browser closes" survives closing the login
+  window. Checked: a cookie with an expiry and one without both carry
+  over.
+- `capture_with_fallback` picks the route: plain fetch first; Firefox
+  when the plain fetch met a wall or a refusal (many sites refuse what
+  is not a browser), found nothing, or came back under 500 characters
+  (how a JavaScript-built page looks from outside); whichever read more
+  wins. A site the user has logged in to (`attic-sites.txt` in the
+  profile) goes to Firefox first, because its plain page is at best a
+  teaser. Firefox starts only if needed, once per capture, and is asked
+  to quit (`eAttemptQuit`, so cookies are written) and killed only if it
+  will not.
+- After each page loads, `page_html` waits until the visible text has
+  stopped growing for two looks 400 ms apart, 8 s at most, then takes
+  the DOM as it stands.
+- One Firefox per profile: the Log in buttons are disabled while a
+  capture runs or another login window is open, and no capture starts
+  while a login window is open. A second capture after logging in
+  writes into the note the first one made, unless that note is open.
+- Verified: unit tests for the routing; `browser_probe` against a
+  JavaScript-built ten-page site (10 pages, 30 s); and the whole flow in
+  the nested harness against a local pay-wall server: needs-login
+  ticket, Log in, the window, quit, automatic second capture, note.
+  Not verified: any real paid site, and a human typing a password
+  (the test site logged the window in by itself).
+- Known limits: a site that detects a driven browser can still refuse;
+  captures through Firefox take a few seconds a page; infinite scroll
+  is not followed; Windows has no Firefox lookup beyond `PATH`.
+- Harness: `xshot.py --act wait:SECONDS`.

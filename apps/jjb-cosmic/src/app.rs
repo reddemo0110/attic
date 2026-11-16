@@ -220,6 +220,8 @@ pub struct AppModel {
     capture_input: text_editor::Content<cosmic::Renderer>,
     capture_tickets: Vec<Ticket>,
     capture_seq: u64,
+    /// The Firefox that captures behind a login go through, if installed.
+    firefox: Option<PathBuf>,
     /// Tag being renamed and the draft name.
     tag_rename: Option<(String, String)>,
     /// Tag whose icon grid is open.
@@ -453,7 +455,14 @@ pub enum Message {
     /// finished address, the redraw tick while one runs, and tidying up.
     CaptureInput(text_editor::Action),
     CaptureStart,
-    CaptureDone(u64, Result<jjb_core::capture::Captured, String>),
+    CaptureDone(
+        u64,
+        Result<(jjb_core::capture::Captured, jjb_core::browser::Route), String>,
+    ),
+    /// Open Firefox on Attic's profile for the user to log in to this
+    /// ticket's site; and the window having been closed again.
+    CaptureLogin(u64),
+    CaptureLoginClosed(u64, Result<(), String>),
     CaptureTick,
     CaptureClear,
     TagRenameStart(String),
@@ -813,6 +822,7 @@ impl cosmic::Application for AppModel {
             capture_input: text_editor::Content::new(),
             capture_tickets: Vec::new(),
             capture_seq: 0,
+            firefox: jjb_core::browser::find_firefox(),
             tag_rename: None,
             tag_icon_pick: None,
             tag_icons,
@@ -2045,6 +2055,8 @@ impl AppModel {
                         tag: tag.clone(),
                         state: TicketState::Queued,
                         progress: Arc::default(),
+                        browser: false,
+                        replaces: None,
                     });
                 }
                 self.capture_input = text_editor::Content::new();
@@ -2057,8 +2069,8 @@ impl AppModel {
                 };
                 let state = match result {
                     Err(why) => TicketState::Failed(why),
-                    Ok(c) if c.needs_login => TicketState::NeedsLogin,
-                    Ok(c) => {
+                    Ok((c, _)) if c.needs_login => TicketState::NeedsLogin,
+                    Ok((c, _)) => {
                         // A new note, made quietly: the note being written
                         // stays open, the ticket offers the way to the new one.
                         let date = Local::now().format("%-d %b %Y").to_string();
@@ -2067,8 +2079,22 @@ impl AppModel {
                             &date,
                             self.capture_tickets[i].tag.as_deref(),
                         );
+                        // Captured again after a login: the fuller text
+                        // goes into the note the first try made, unless
+                        // that note is open and may have been edited.
+                        let replaces = self.capture_tickets[i]
+                            .replaces
+                            .take()
+                            .filter(|id| self.current.as_ref().is_none_or(|n| n.id != *id));
                         let saved = self.store.as_mut().map(|s| {
-                            let mut note = s.create()?;
+                            let existing = match &replaces {
+                                Some(id) => s.load(id)?.filter(|n| !n.trashed),
+                                None => None,
+                            };
+                            let mut note = match existing {
+                                Some(note) => note,
+                                None => s.create()?,
+                            };
                             note.body = body;
                             s.save(&mut note)?;
                             anyhow::Ok(note)
@@ -2094,9 +2120,60 @@ impl AppModel {
 
             Message::CaptureTick => {}
 
+            Message::CaptureLogin(id) => {
+                // One Firefox at a time on the profile: not while a
+                // capture runs, not while another login window is open.
+                let busy = self.capture_tickets.iter().any(|t| {
+                    matches!(t.state, TicketState::Running | TicketState::LoggingIn)
+                });
+                let (Some(firefox), false) = (self.firefox.clone(), busy) else {
+                    return Task::none();
+                };
+                let Some(ticket) = self.capture_tickets.iter_mut().find(|t| t.id == id) else {
+                    return Task::none();
+                };
+                if let TicketState::Done { note, .. } = &ticket.state {
+                    ticket.replaces = Some(note.clone());
+                }
+                ticket.state = TicketState::LoggingIn;
+                let url = ticket.url.clone();
+                let profile = capture_profile();
+                return Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            jjb_core::browser::login_window(&firefox, &profile, &url)
+                        })
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r.map_err(|e| format!("{e:#}")))
+                    },
+                    move |result| cosmic::Action::App(Message::CaptureLoginClosed(id, result)),
+                );
+            }
+
+            Message::CaptureLoginClosed(id, result) => {
+                if let Some(ticket) = self.capture_tickets.iter_mut().find(|t| t.id == id) {
+                    match result {
+                        // Logged in (as far as we can tell): capture it
+                        // again, through the browser this time.
+                        Ok(()) => {
+                            ticket.browser = true;
+                            ticket.state = TicketState::Queued;
+                            ticket.progress = Arc::default();
+                        }
+                        Err(why) => ticket.state = TicketState::Failed(why),
+                    }
+                }
+                return self.capture_pump();
+            }
+
             Message::CaptureClear => {
-                self.capture_tickets
-                    .retain(|t| matches!(t.state, TicketState::Queued | TicketState::Running));
+                self.capture_tickets.retain(|t| {
+                    matches!(
+                        t.state,
+                        TicketState::Queued | TicketState::Running | TicketState::LoggingIn
+                    )
+                });
             }
 
             Message::DuplicateNote(id) => {
@@ -6373,18 +6450,22 @@ impl AppModel {
     // ----- web capture -----
 
     fn capture_running(&self) -> bool {
-        self.capture_tickets
-            .iter()
-            .any(|t| matches!(t.state, TicketState::Queued | TicketState::Running))
+        self.capture_tickets.iter().any(|t| {
+            matches!(
+                t.state,
+                TicketState::Queued | TicketState::Running | TicketState::LoggingIn
+            )
+        })
     }
 
     /// Start the next queued address, unless one is already being fetched:
     /// one at a time, so a list of pages from one site does not hammer it.
     fn capture_pump(&mut self) -> Task<cosmic::Action<Message>> {
+        // One at a time, and none while a login window holds the profile.
         if self
             .capture_tickets
             .iter()
-            .any(|t| matches!(t.state, TicketState::Running))
+            .any(|t| matches!(t.state, TicketState::Running | TicketState::LoggingIn))
         {
             return Task::none();
         }
@@ -6397,19 +6478,19 @@ impl AppModel {
         };
         ticket.state = TicketState::Running;
         let (id, url, progress) = (ticket.id, ticket.url.clone(), Arc::clone(&ticket.progress));
+        let force_browser = ticket.browser;
+        let profile = capture_profile();
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
-                    jjb_core::capture::capture(
-                        &url,
-                        &mut |u| jjb_core::capture::fetch_html(u),
-                        &mut |n, of| {
-                            if let Ok(mut cell) = progress.lock() {
-                                *cell = (n, of);
-                            }
-                        },
-                        jjb_core::capture::PAUSE,
-                    )
+                    // The plain fetch first; Firefox for a site that has
+                    // been logged in to, or when the plain page is a
+                    // wall or comes back empty.
+                    jjb_core::browser::capture_auto(&url, &profile, force_browser, &mut |n, of| {
+                        if let Ok(mut cell) = progress.lock() {
+                            *cell = (n, of);
+                        }
+                    })
                 })
                 .await
                 .map_err(|e| e.to_string())
@@ -6447,6 +6528,10 @@ impl AppModel {
                 .spacing(12)
                 .align_y(Alignment::Center),
         );
+        let profile_busy = self
+            .capture_tickets
+            .iter()
+            .any(|t| matches!(t.state, TicketState::Running | TicketState::LoggingIn));
         // Newest first: what was just asked for is at the top.
         for t in self.capture_tickets.iter().rev() {
             let status = match &t.state {
@@ -6466,7 +6551,9 @@ impl AppModel {
                         None => done,
                     }
                 }
-                TicketState::NeedsLogin => fl!("capture-needs-login"),
+                TicketState::NeedsLogin if self.firefox.is_some() => fl!("capture-needs-login"),
+                TicketState::NeedsLogin => fl!("capture-no-firefox"),
+                TicketState::LoggingIn => fl!("capture-logging-in"),
                 TicketState::Failed(why) => fl!("capture-failed", why = why.as_str()),
             };
             let name = match &t.state {
@@ -6484,12 +6571,31 @@ impl AppModel {
                 .push(widget::text::caption(status))
                 .spacing(2)
                 .width(Length::Fill);
-            if let TicketState::Done { note, .. } = &t.state {
-                ticket = ticket.push(
-                    widget::button::link(fl!("capture-open"))
-                        .padding(0)
-                        .on_press(Message::Select(note.clone())),
-                );
+            // Logging in needs Firefox, and the profile to itself.
+            let login = (self.firefox.is_some() && !profile_busy)
+                .then_some(Message::CaptureLogin(t.id));
+            match &t.state {
+                TicketState::Done { note, .. } => {
+                    let mut links = widget::column::with_capacity(2).spacing(4).push(
+                        widget::button::link(fl!("capture-open"))
+                            .padding(0)
+                            .on_press(Message::Select(note.clone())),
+                    );
+                    if self.firefox.is_some() {
+                        links = links.push(
+                            widget::button::link(fl!("capture-login-again"))
+                                .padding(0)
+                                .on_press_maybe(login),
+                        );
+                    }
+                    ticket = ticket.push(links);
+                }
+                TicketState::NeedsLogin if self.firefox.is_some() => {
+                    ticket = ticket.push(
+                        widget::button::standard(fl!("capture-login")).on_press_maybe(login),
+                    );
+                }
+                _ => {}
             }
             col = col.push(
                 widget::container(ticket)
@@ -6498,10 +6604,12 @@ impl AppModel {
                     .class(cosmic::theme::Container::Card),
             );
         }
-        let finished = self
-            .capture_tickets
-            .iter()
-            .any(|t| !matches!(t.state, TicketState::Queued | TicketState::Running));
+        let finished = self.capture_tickets.iter().any(|t| {
+            !matches!(
+                t.state,
+                TicketState::Queued | TicketState::Running | TicketState::LoggingIn
+            )
+        });
         if finished {
             col = col.push(
                 widget::button::text(fl!("capture-clear")).on_press(Message::CaptureClear),
@@ -9705,6 +9813,20 @@ struct Ticket {
     /// (page being fetched, of how many once the site has said), written
     /// by the worker thread and read by the panel.
     progress: Arc<std::sync::Mutex<(usize, Option<usize>)>>,
+    /// Go through Firefox without trying the plain fetch: the user has
+    /// just logged in for this one.
+    browser: bool,
+    /// The note an earlier, thinner capture of this address made; the
+    /// next result goes into it.
+    replaces: Option<String>,
+}
+
+/// Where Attic's own Firefox profile lives: beside the index, so it is
+/// per user and never synced.
+fn capture_profile() -> PathBuf {
+    jjb_core::platform::current()
+        .data_dir(AppModel::APP_ID)
+        .join("capture-firefox")
 }
 
 #[derive(Debug, Clone)]
@@ -9718,6 +9840,8 @@ enum TicketState {
         stopped: Option<String>,
     },
     NeedsLogin,
+    /// The Firefox login window is open; closing it tries again.
+    LoggingIn,
     Failed(String),
 }
 

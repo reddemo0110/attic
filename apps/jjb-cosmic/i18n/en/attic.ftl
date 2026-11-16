@@ -46,7 +46,7 @@ note-duplicate = duplicate
 dock-capture = Capture from the web
 dock-capture-running = Capturing from the web…
 capture-title = Capture from the web
-capture-hint = Paste one or more web addresses. Each becomes a note with the page's text, cleaned up; an article split over several pages is followed and joined.
+capture-hint = Paste one or more web addresses. Each becomes a note with the page's text, cleaned up; an article split over several pages is followed and joined. Sites you pay for work too, once you have logged in from a ticket.
 capture-placeholder = https://…  one address per line
 capture-go = Capture
 capture-count = { $n ->
@@ -60,7 +60,11 @@ capture-done = { $pages ->
     [one] Done
    *[other] Done, { $pages } pages
 }
-capture-needs-login = This site wants a login before it shows the page.
+capture-needs-login = This site wants a login before it shows the page. Log in once and Attic remembers.
+capture-no-firefox = This site wants a login before it shows the page. Attic uses Firefox for that, and could not find it.
+capture-login = Log in with Firefox
+capture-login-again = Not the whole text? Log in and capture again
+capture-logging-in = Log in in the Firefox window that just opened, then close that window.
 capture-failed = Could not capture: { $why }
 capture-no-store = the notes folder is not open
 capture-open = Open the note
