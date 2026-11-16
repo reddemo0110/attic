@@ -43,6 +43,28 @@ frame-tags = tags
 tag-rename = rename…
 tag-icon = icon…
 note-duplicate = duplicate
+dock-capture = Capture from the web
+dock-capture-running = Capturing from the web…
+capture-title = Capture from the web
+capture-hint = Paste one or more web addresses. Each becomes a note with the page's text, cleaned up; an article split over several pages is followed and joined.
+capture-placeholder = https://…  one address per line
+capture-go = Capture
+capture-count = { $n ->
+    [one] 1 address
+   *[other] { $n } addresses
+}
+capture-queued = Waiting its turn
+capture-fetching = Fetching page { $n }…
+capture-fetching-of = Fetching page { $n } of { $of }…
+capture-done = { $pages ->
+    [one] Done
+   *[other] Done, { $pages } pages
+}
+capture-needs-login = This site wants a login before it shows the page.
+capture-failed = Could not capture: { $why }
+capture-no-store = the notes folder is not open
+capture-open = Open the note
+capture-clear = Clear finished
 tag-icon-none = none
 tag-rename-placeholder = new name
 frame-notes = notes

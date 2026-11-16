@@ -24,6 +24,10 @@ full = [
     "dep:uuid",
     "dep:chrono",
     "dep:harper-core",
+    "dep:dom_smoothie",
+    "dep:dom_query",
+    "dep:htmd",
+    "dep:url",
 ]
 
 [dependencies]
@@ -37,6 +41,12 @@ chrono = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 # Proofreading (spelling + grammar), offline, English. Pure Rust.
 harper-core = { version = "3", optional = true }
+# Web capture: reader-mode extraction (a port of Mozilla's readability.js),
+# the DOM it works on (for finding "next page" links), and HTML → markdown.
+dom_smoothie = { version = "0.19", optional = true }
+dom_query = { version = "0.29", optional = true }
+htmd = { version = "0.5", optional = true }
+url = { version = "2", optional = true }
 image = { workspace = true, optional = true }
 open = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }

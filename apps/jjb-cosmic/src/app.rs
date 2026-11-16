@@ -215,6 +215,11 @@ pub struct AppModel {
     tag_menu: Option<String>,
     /// The note (by id) whose right-click menu is open in the list.
     note_menu: Option<String>,
+    /// Web capture: the addresses being pasted, and a ticket for every
+    /// address asked for this session (one is fetched at a time).
+    capture_input: text_editor::Content<cosmic::Renderer>,
+    capture_tickets: Vec<Ticket>,
+    capture_seq: u64,
     /// Tag being renamed and the draft name.
     tag_rename: Option<(String, String)>,
     /// Tag whose icon grid is open.
@@ -444,6 +449,13 @@ pub enum Message {
     NoteMenu(Option<String>),
     /// Make a copy of this note and open it.
     DuplicateNote(String),
+    /// Web capture: typing in the address box, the Capture button, a
+    /// finished address, the redraw tick while one runs, and tidying up.
+    CaptureInput(text_editor::Action),
+    CaptureStart,
+    CaptureDone(u64, Result<jjb_core::capture::Captured, String>),
+    CaptureTick,
+    CaptureClear,
     TagRenameStart(String),
     TagRenameInput(String),
     TagRenameCommit,
@@ -798,6 +810,9 @@ impl cosmic::Application for AppModel {
             collapsed,
             tag_menu: None,
             note_menu: None,
+            capture_input: text_editor::Content::new(),
+            capture_tickets: Vec::new(),
+            capture_seq: 0,
             tag_rename: None,
             tag_icon_pick: None,
             tag_icons,
@@ -1109,6 +1124,11 @@ impl cosmic::Application for AppModel {
                 Message::ToggleContextPage(ContextPage::Themes),
             )
             .title(fl!("appearance")),
+            ContextPage::Capture => context_drawer::context_drawer(
+                self.capture_panel(),
+                Message::ToggleContextPage(ContextPage::Capture),
+            )
+            .title(fl!("capture-title")),
             ContextPage::Picker => context_drawer::context_drawer(
                 self.file_picker(),
                 Message::ToggleContextPage(ContextPage::Picker),
@@ -1252,6 +1272,14 @@ impl cosmic::Application for AppModel {
             subscriptions.push(
                 cosmic::iced::time::every(Duration::from_millis(200))
                     .map(|_| Message::AutosaveTick),
+            );
+        }
+        // A capture reports its page count through a shared cell; redraw
+        // the ticket now and then while one runs.
+        if self.capture_running() {
+            subscriptions.push(
+                cosmic::iced::time::every(Duration::from_millis(400))
+                    .map(|_| Message::CaptureTick),
             );
         }
         // Ticks only while a resize is unsaved; one write and it is gone.
@@ -1990,6 +2018,85 @@ impl AppModel {
 
             Message::NoteMenu(id) => {
                 self.note_menu = id;
+            }
+
+            Message::CaptureInput(action) => {
+                self.capture_input.perform(action);
+            }
+
+            Message::CaptureStart => {
+                let urls = jjb_core::capture::parse_urls(&self.capture_input.text());
+                // A capture started inside a folder files its note there.
+                let tag = match &self.view {
+                    View::Tag(t) => Some(t.clone()),
+                    _ => None,
+                };
+                for url in urls {
+                    let waiting = self.capture_tickets.iter().any(|t| {
+                        t.url == url && matches!(t.state, TicketState::Queued | TicketState::Running)
+                    });
+                    if waiting {
+                        continue;
+                    }
+                    self.capture_seq += 1;
+                    self.capture_tickets.push(Ticket {
+                        id: self.capture_seq,
+                        url,
+                        tag: tag.clone(),
+                        state: TicketState::Queued,
+                        progress: Arc::default(),
+                    });
+                }
+                self.capture_input = text_editor::Content::new();
+                return self.capture_pump();
+            }
+
+            Message::CaptureDone(id, result) => {
+                let Some(i) = self.capture_tickets.iter().position(|t| t.id == id) else {
+                    return self.capture_pump();
+                };
+                let state = match result {
+                    Err(why) => TicketState::Failed(why),
+                    Ok(c) if c.needs_login => TicketState::NeedsLogin,
+                    Ok(c) => {
+                        // A new note, made quietly: the note being written
+                        // stays open, the ticket offers the way to the new one.
+                        let date = Local::now().format("%-d %b %Y").to_string();
+                        let body = jjb_core::capture::note_body(
+                            &c,
+                            &date,
+                            self.capture_tickets[i].tag.as_deref(),
+                        );
+                        let saved = self.store.as_mut().map(|s| {
+                            let mut note = s.create()?;
+                            note.body = body;
+                            s.save(&mut note)?;
+                            anyhow::Ok(note)
+                        });
+                        match saved {
+                            Some(Ok(note)) => TicketState::Done {
+                                note: note.id,
+                                title: note.title,
+                                pages: c.pages,
+                                stopped: c.stopped,
+                            },
+                            Some(Err(err)) => TicketState::Failed(format!("{err:#}")),
+                            None => TicketState::Failed(fl!("capture-no-store")),
+                        }
+                    }
+                };
+                self.capture_tickets[i].state = state;
+                self.refresh_tags();
+                self.refresh_list();
+                self.sync_soon();
+                return self.capture_pump();
+            }
+
+            Message::CaptureTick => {}
+
+            Message::CaptureClear => {
+                self.capture_tickets
+                    .retain(|t| matches!(t.state, TicketState::Queued | TicketState::Running));
             }
 
             Message::DuplicateNote(id) => {
@@ -4650,6 +4757,29 @@ impl AppModel {
             .into(),
         );
 
+        // Web capture: opens its panel; lit while the panel is open or a
+        // capture is still running behind it.
+        let capture_open =
+            self.core.window.show_context && self.context_page == ContextPage::Capture;
+        items.push(
+            widget::tooltip(
+                widget::button::custom(icon(DockIcon::Capture, p.accent))
+                    .padding(ds.pad())
+                    .class(retro::row_class(p, capture_open || self.capture_running()))
+                    .on_press(Message::ToggleContextPage(ContextPage::Capture)),
+                retro::dim(
+                    p,
+                    if self.capture_running() {
+                        fl!("dock-capture-running")
+                    } else {
+                        fl!("dock-capture")
+                    },
+                ),
+                widget::tooltip::Position::Top,
+            )
+            .into(),
+        );
+
         // Proofreading switches: a letter each, lit (selected row colour)
         // while its marks are being drawn.
         items.push(divider().into());
@@ -6238,6 +6368,146 @@ impl AppModel {
                 }
             }
         }
+    }
+
+    // ----- web capture -----
+
+    fn capture_running(&self) -> bool {
+        self.capture_tickets
+            .iter()
+            .any(|t| matches!(t.state, TicketState::Queued | TicketState::Running))
+    }
+
+    /// Start the next queued address, unless one is already being fetched:
+    /// one at a time, so a list of pages from one site does not hammer it.
+    fn capture_pump(&mut self) -> Task<cosmic::Action<Message>> {
+        if self
+            .capture_tickets
+            .iter()
+            .any(|t| matches!(t.state, TicketState::Running))
+        {
+            return Task::none();
+        }
+        let Some(ticket) = self
+            .capture_tickets
+            .iter_mut()
+            .find(|t| matches!(t.state, TicketState::Queued))
+        else {
+            return Task::none();
+        };
+        ticket.state = TicketState::Running;
+        let (id, url, progress) = (ticket.id, ticket.url.clone(), Arc::clone(&ticket.progress));
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    jjb_core::capture::capture(
+                        &url,
+                        &mut |u| jjb_core::capture::fetch_html(u),
+                        &mut |n, of| {
+                            if let Ok(mut cell) = progress.lock() {
+                                *cell = (n, of);
+                            }
+                        },
+                        jjb_core::capture::PAUSE,
+                    )
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| format!("{e:#}")))
+            },
+            move |result| cosmic::Action::App(Message::CaptureDone(id, result)),
+        )
+    }
+
+    /// The capture panel: a box for addresses, the button, and a ticket
+    /// per address saying how it is getting on.
+    fn capture_panel(&self) -> Element<'_, Message> {
+        let count = jjb_core::capture::parse_urls(&self.capture_input.text()).len();
+        let mut col = widget::column::with_capacity(6 + self.capture_tickets.len())
+            .spacing(10)
+            .width(Length::Fill);
+        col = col.push(widget::text::caption(fl!("capture-hint")));
+        col = col.push(
+            text_editor::text_editor(&self.capture_input)
+                .placeholder(fl!("capture-placeholder"))
+                .height(Length::Fixed(140.0))
+                .on_action(Message::CaptureInput),
+        );
+        col = col.push(
+            widget::row::with_capacity(2)
+                .push(
+                    widget::button::suggested(fl!("capture-go"))
+                        .on_press_maybe((count > 0).then_some(Message::CaptureStart)),
+                )
+                .push(widget::text::caption(if count > 0 {
+                    fl!("capture-count", n = count)
+                } else {
+                    String::new()
+                }))
+                .spacing(12)
+                .align_y(Alignment::Center),
+        );
+        // Newest first: what was just asked for is at the top.
+        for t in self.capture_tickets.iter().rev() {
+            let status = match &t.state {
+                TicketState::Queued => fl!("capture-queued"),
+                TicketState::Running => {
+                    let (n, of) = t.progress.lock().map_or((0, None), |c| *c);
+                    match of {
+                        Some(of) => fl!("capture-fetching-of", n = n.max(1), of = of),
+                        None => fl!("capture-fetching", n = n.max(1)),
+                    }
+                }
+                TicketState::Done { pages, stopped, .. } => {
+                    let pages: usize = *pages;
+                    let done = fl!("capture-done", pages = pages);
+                    match stopped {
+                        Some(why) => format!("{done} — {why}"),
+                        None => done,
+                    }
+                }
+                TicketState::NeedsLogin => fl!("capture-needs-login"),
+                TicketState::Failed(why) => fl!("capture-failed", why = why.as_str()),
+            };
+            let name = match &t.state {
+                TicketState::Done { title, .. } => title.clone(),
+                _ => crate::links::truncate(
+                    t.url
+                        .trim_start_matches("https://")
+                        .trim_start_matches("http://")
+                        .trim_start_matches("www."),
+                    60,
+                ),
+            };
+            let mut ticket = widget::column::with_capacity(3)
+                .push(widget::text::body(name))
+                .push(widget::text::caption(status))
+                .spacing(2)
+                .width(Length::Fill);
+            if let TicketState::Done { note, .. } = &t.state {
+                ticket = ticket.push(
+                    widget::button::link(fl!("capture-open"))
+                        .padding(0)
+                        .on_press(Message::Select(note.clone())),
+                );
+            }
+            col = col.push(
+                widget::container(ticket)
+                    .padding(10)
+                    .width(Length::Fill)
+                    .class(cosmic::theme::Container::Card),
+            );
+        }
+        let finished = self
+            .capture_tickets
+            .iter()
+            .any(|t| !matches!(t.state, TicketState::Queued | TicketState::Running));
+        if finished {
+            col = col.push(
+                widget::button::text(fl!("capture-clear")).on_press(Message::CaptureClear),
+            );
+        }
+        col.into()
     }
 
     /// The part of an editor action that concerns a selection across
@@ -8558,6 +8828,12 @@ impl AppModel {
                 Task::none()
             }
             Step::TagMenu(tag) => self.update(Message::TagMenu(Some(tag))),
+            Step::Capture(urls) => {
+                self.context_page = ContextPage::Capture;
+                self.core.window.show_context = true;
+                self.capture_input = text_editor::Content::with_text(&urls);
+                self.update(Message::CaptureStart)
+            }
             Step::NoteMenu => {
                 let id = self.current.as_ref().map(|n| n.id.clone());
                 self.update(Message::NoteMenu(id))
@@ -9414,6 +9690,35 @@ pub enum ContextPage {
     About,
     Themes,
     Picker,
+    /// Web capture: paste addresses, watch the tickets.
+    Capture,
+}
+
+/// One address handed to web capture, and how it is getting on.
+#[derive(Debug, Clone)]
+struct Ticket {
+    id: u64,
+    url: String,
+    /// The folder the capture was started in; its note is filed there.
+    tag: Option<String>,
+    state: TicketState,
+    /// (page being fetched, of how many once the site has said), written
+    /// by the worker thread and read by the panel.
+    progress: Arc<std::sync::Mutex<(usize, Option<usize>)>>,
+}
+
+#[derive(Debug, Clone)]
+enum TicketState {
+    Queued,
+    Running,
+    Done {
+        note: String,
+        title: String,
+        pages: usize,
+        stopped: Option<String>,
+    },
+    NeedsLogin,
+    Failed(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

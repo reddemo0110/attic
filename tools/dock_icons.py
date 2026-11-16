@@ -58,6 +58,7 @@ ICONS = {
     "Rule": ("minus", "minus", "minus-bold", "minus-solid", "minus", "minus", None),
     "Plus": ("plus", "plus", "add-bold", "plus-solid", "plus", "plus", None),
     "Image": ("image-add", "media-image-plus", "gallery-add-bold", "image-solid", "image-plus", "image-plus", None),
+    "Capture": ("cloud-download", "cloud-download", "cloud-download-bold", "cloud-download-solid", "cloud-download", "cloud-download", None),
 }
 
 KEYS = {
@@ -65,6 +66,7 @@ KEYS = {
     "Table": "table", "H1": "h1", "H2": "h2", "Bullet": "bullet",
     "Todo": "todo", "Quote": "quote", "Link": "link", "Tag": "tag",
     "Rule": "rule", "Plus": "plus", "Image": "image",
+    "Capture": "capture",
 }
 
 

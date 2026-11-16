@@ -1576,3 +1576,54 @@ image breaks a heading mid-word when the column is under ~100 px.
   the user first.
 - Harness: steps `notemenu`, `duplicate`; `xshot.py --act rclick:X,Y`.
   Verified with a real right-click and click.
+
+## 2026-11-16 — Capture from the web (stages 1 to 3)
+
+- The ask: a dock icon that opens a box for pasted addresses, a button,
+  the text of each page added to a note "in a nice readable way", a
+  ticket to say when it is done, and smart about "page 1 of 5". Agreed
+  with the user: a new note per address (filed in the folder being
+  viewed), text only, 30 pages at most, and later a Firefox route for
+  sites behind a login (stage 4, not in this entry).
+- **Engine** in the core (`capture.rs`, `full` feature, so the Windows
+  app gets it). Reader-mode extraction is `dom_smoothie` (a port of
+  Mozilla's readability.js, MIT), HTML → markdown is `htmd` (Apache-2.0),
+  the DOM for link hunting is `dom_query`, addresses are `url` (already
+  in the tree). Rejected: growing `links.rs`'s hand-rolled tag scanner,
+  which is fine for a title and a thumbnail and hopeless for articles.
+  `capture()` takes its fetcher as a closure: tests serve pages from a
+  map, and the Firefox route will be another fetcher.
+- **Cleaning** beyond the libraries, each from a real page: links that
+  only jump around the page lose their link (a contents list keeps its
+  words, a footnote mark goes), Wikipedia's [edit] links and link
+  tooltips go, a link emptied by a dropped picture goes, and a `#word`
+  in the text gets a backslash so it does not become one of the note's
+  tags. A `<meta refresh>` signpost page is followed.
+- **Pagination**: candidates in order of trust are `rel="next"`, a link
+  that says Next (or is only an arrow, or wears a `next` class), then
+  the number after the current page. Every candidate must pass
+  `same_article`, because on a blog "next" is usually the next *post*:
+  same site, and the same path with another query, or the first page's
+  path plus a page marker, or a sibling file named as a page, or the
+  current address with its last number counted up (named `page`/`p`/…,
+  or small and up by one; a big unnamed number counting up is an id).
+  Stops: the cap, an address or a text seen before, an empty page. A
+  page that fails after the first keeps what was read and says so.
+- **Login walls** are only detected here: a 401/402/403 on the first
+  page, or a password box with little text. The ticket says a login is
+  wanted.
+- **App**: `ContextPage::Capture` drawer (stock libcosmic widgets, as
+  chrome must be), `Ticket`s run one at a time through `capture_pump`
+  on a blocking thread; the page count reaches the panel through a
+  shared cell and a 400 ms redraw tick while anything runs. A finished
+  capture creates its note through the store without opening it, so the
+  note being written is not swapped out; the ticket links to it.
+- The dock icon is `cloud-download` in six sets (Duoicons borrows
+  Boxicons). Regenerating `dockicon.rs` also picked up two small
+  upstream redraws in the Solar set.
+- Checked against live pages (Wikipedia, a redirecting blog post, two
+  paginated practice sites: 10 pages and 2 pages followed to the end)
+  with the ignored `live_probe` test, and offline in the app with
+  `tools/fixtures/capture`.
+- Known limits: JavaScript-built pages, infinite scroll, pictures.
+- Harness: `JJB_CAPTURE_FIXTURE=dir`, step `capture:<addresses>`.

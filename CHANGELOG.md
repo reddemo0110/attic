@@ -7,6 +7,21 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- **Capture from the web**: a new cloud icon in the dock opens a panel
+  where you paste one or more web addresses and press **Capture**. Each
+  address becomes a new note holding the page's text, cleaned up the way
+  a browser's reader view does it: headings, paragraphs, lists, quotes,
+  links and code, without the menus, adverts and footers. The note
+  starts with the page title, a card linking back to the source, and the
+  date. An article split over several pages ("Page 1 of 5", a "Next"
+  link) is followed and joined into one note, up to 30 pages. Every
+  address gets a ticket in the panel that shows how it is getting on:
+  waiting, fetching page 2 of 5, done (with a link to open the note), or
+  why it failed. Captures run in the background, so you can keep writing,
+  and a note started while you are in a folder is filed there. Text
+  only for now: pictures are left out. Pages that need a login, and
+  pages that only fill in their text with JavaScript, cannot be captured
+  yet; the ticket says so.
 - **Duplicate a note**: right-click a note in the list and choose
   *duplicate*. The copy opens straight away with " copy" after its
   title, pictures and all, and sits in the same folders as the original

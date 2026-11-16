@@ -141,6 +141,9 @@ pub enum Step {
     Attach(String),
     /// Open the right-click menu of a tag: `tagmenu:travels`.
     TagMenu(String),
+    /// Open the capture panel and capture these addresses (spaces or
+    /// `\n` between them): `capture:https://…`.
+    Capture(String),
     /// Open the open note's right-click menu in the list.
     NoteMenu,
     /// Duplicate the open note, as its right-click menu does.
@@ -382,6 +385,7 @@ pub fn parse(script: &str) -> Vec<Step> {
                 "attach" => Step::Attach(arg.trim().to_owned()),
                 "tagmenu" => Step::TagMenu(arg.trim().to_owned()),
                 "notemenu" => Step::NoteMenu,
+                "capture" => Step::Capture(unescape(arg)),
                 "duplicate" => Step::Duplicate,
                 "nav" => Step::Nav(arg.trim().trim_start_matches('+').parse().ok()?),
                 "marker" => Step::Marker(arg.trim().to_owned()),

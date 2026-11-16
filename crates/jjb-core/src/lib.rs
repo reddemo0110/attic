@@ -14,6 +14,8 @@ pub mod markdown;
 pub mod table;
 
 #[cfg(feature = "full")]
+pub mod capture;
+#[cfg(feature = "full")]
 pub mod images;
 #[cfg(feature = "full")]
 pub mod links;
