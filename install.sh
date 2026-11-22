@@ -85,6 +85,17 @@ chmod 0755 "$PLUGIN_DIR/$NAME-launcher"
 update-desktop-database "$BASE/applications" 2>/dev/null || true
 gtk-update-icon-cache -q -t -f "$BASE/icons/hicolor" 2>/dev/null || true
 
+# --- tidy up ---------------------------------------------------------------
+# The build leaves gigabytes of compiler output in target/ (every debug and
+# test build piles up there). The installed copy lives in ~/.local/bin, so
+# none of it is needed now; the next install just builds from scratch.
+# Set ATTIC_KEEP_BUILD=1 to keep it, e.g. while working on Attic.
+if [ "${ATTIC_KEEP_BUILD:-0}" != 1 ]; then
+    size="$(du -sh "$TARGET" 2>/dev/null | cut -f1)"
+    cargo clean --quiet 2>/dev/null || rm -rf "$TARGET"
+    say "Removed the build files (${size:-0}); ATTIC_KEEP_BUILD=1 keeps them"
+fi
+
 say "Installed. Find Attic in the app library; right-click it in the dock to pin."
 case ":${XDG_CURRENT_DESKTOP:-}:" in
     *GNOME*) echo "GNOME: notes show up in the Activities overview search after your next login (or Alt+F2, r, Enter on X11)." ;;

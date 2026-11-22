@@ -78,6 +78,11 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **COSMIC launcher plugin**: type `note ` in the launcher to search notes.
 
 ### Changed
+- **Installing no longer leaves gigabytes behind.** `install.sh` now
+  removes Rust's build files (the `target/` folder) once Attic is
+  installed; they had grown to 32 GB on one laptop. The next install
+  builds from scratch, which takes a few minutes. Set
+  `ATTIC_KEEP_BUILD=1` to keep them, for example while working on Attic.
 - The window chrome (header bar, menus, buttons, options drawer) follows
   the note theme's side: pick a light theme and the chrome goes light too,
   whatever the desktop is set to. The "follows your desktop" theme leaves
