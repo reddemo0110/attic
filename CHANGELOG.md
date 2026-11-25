@@ -78,6 +78,15 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **COSMIC launcher plugin**: type `note ` in the launcher to search notes.
 
 ### Changed
+- **On GNOME, Attic's title bar and menus now look like GNOME's own apps.**
+  The minimize, maximize and close buttons are GNOME's round grey buttons
+  instead of flat icons tinted in the accent colour, and they follow
+  GNOME's title-bar button setting as before. The pin, trash, new-note and
+  sidebar buttons are GNOME's flat buttons: a soft grey when you point at
+  them or switch them on, never blue. The File, Edit, Format and View
+  menus open as GNOME-style popovers with rounder corners, a little
+  padding round the items, GNOME's menu colour and its tighter row
+  spacing. On COSMIC nothing changes.
 - **Installing no longer leaves gigabytes behind.** `install.sh` now
   removes Rust's build files (the `target/` folder) once Attic is
   installed; they had grown to 32 GB on one laptop. The next install

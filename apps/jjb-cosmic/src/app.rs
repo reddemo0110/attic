@@ -479,6 +479,9 @@ pub enum Message {
     ToggleNav,
     ToggleList,
     ToggleSolo,
+    /// The GNOME-style window controls (minimize, maximize/restore).
+    WindowMinimize,
+    WindowMaximize,
     /// Immersive writing on/off (fullscreen, nothing but the note).
     ToggleImmersive,
     /// The pointer reached (true) or left (false) the hidden dock.
@@ -863,6 +866,13 @@ impl cosmic::Application for AppModel {
 
         // The Appearance drawer sits beside the note, not over it.
         app.core.window.context_is_overlay = false;
+        // On GNOME the window controls are drawn by `header_end` in
+        // libadwaita's style (see gnome.rs); libcosmic's would be accent-tinted.
+        if crate::gnome::active() {
+            app.core.window.show_close = false;
+            app.core.window.show_maximize = false;
+            app.core.window.show_minimize = false;
+        }
         app.install_icon();
         let title = app.update_title();
         // Fonts are (re)loaded on `window::Event::Opened` too: a LoadFont
@@ -978,9 +988,17 @@ impl cosmic::Application for AppModel {
             menu::Item::Button(fl!("about"), None, MenuAction::About),
         ];
 
+        let gnome = crate::gnome::active();
+        let root = |label: String| -> Element<'_, Message> {
+            if gnome {
+                crate::gnome::menu_root(label)
+            } else {
+                menu::root(label).apply(Element::from)
+            }
+        };
         let menu_bar = menu::bar(vec![
             menu::Tree::with_children(
-                menu::root(fl!("file")).apply(Element::from),
+                root(fl!("file")),
                 menu::items(
                     &self.key_binds,
                     vec![
@@ -999,7 +1017,7 @@ impl cosmic::Application for AppModel {
                 ),
             ),
             menu::Tree::with_children(
-                menu::root(fl!("edit")).apply(Element::from),
+                root(fl!("edit")),
                 menu::items(
                     &self.key_binds,
                     vec![
@@ -1010,7 +1028,7 @@ impl cosmic::Application for AppModel {
             )
             .width(200),
             menu::Tree::with_children(
-                menu::root(fl!("format")).apply(Element::from),
+                root(fl!("format")),
                 menu::items(
                     &self.key_binds,
                     Format::ALL
@@ -1020,7 +1038,7 @@ impl cosmic::Application for AppModel {
                 ),
             ),
             menu::Tree::with_children(
-                menu::root(fl!("view")).apply(Element::from),
+                root(fl!("view")),
                 menu::items(&self.key_binds, view_items),
             )
             .width(330),
@@ -1034,12 +1052,28 @@ impl cosmic::Application for AppModel {
         .item_height(menu::ItemHeight::Dynamic(40))
         .item_width(menu::ItemWidth::Static(260))
         .spacing(4.0);
+        // GNOME: libadwaita's popover (12 px radius, 6 px padding) and its
+        // 32 px rows packed with no gaps.
+        let menu_bar = if gnome {
+            menu_bar
+                .style(crate::gnome::menu_style())
+                .item_height(menu::ItemHeight::Dynamic(32))
+                .spacing(0.0)
+        } else {
+            menu_bar
+        };
 
         let toggle = |icon_name: &'static str, label: String, on: bool, msg: Message| {
-            widget::tooltip(
+            let button: Element<'_, Message> = if gnome {
+                crate::gnome::header_icon(icon_name, on, msg).into()
+            } else {
                 widget::button::icon(icon::from_name(icon_name))
                     .selected(on)
-                    .on_press(msg),
+                    .on_press(msg)
+                    .into()
+            };
+            widget::tooltip(
+                button,
                 widget::text::body(label),
                 widget::tooltip::Position::Bottom,
             )
@@ -1109,6 +1143,14 @@ impl cosmic::Application for AppModel {
                 "list-add-symbolic",
                 sc(fl!("new-note"), MenuAction::NewNote),
                 Message::NewNote,
+            ));
+        }
+        if crate::gnome::active() {
+            items.push(crate::gnome::window_controls(
+                self.core.window.is_maximized,
+                cosmic::config::show_minimize().then_some(Message::WindowMinimize),
+                cosmic::config::show_maximize().then_some(Message::WindowMaximize),
+                Message::Quit,
             ));
         }
         items
@@ -2984,6 +3026,18 @@ impl AppModel {
                 }
                 let search = self.update(Message::Search(text));
                 return Task::batch([search, self.update(Message::FocusSearch)]);
+            }
+
+            Message::WindowMinimize => {
+                if let Some(id) = self.core.main_window_id() {
+                    return window::minimize(id, true);
+                }
+            }
+
+            Message::WindowMaximize => {
+                if let Some(id) = self.core.main_window_id() {
+                    return window::toggle_maximize(id);
+                }
             }
 
             Message::Raise => {
@@ -9076,8 +9130,15 @@ fn header_button<'a>(
     label: String,
     on_press: Message,
 ) -> Element<'a, Message> {
+    let button: Element<'a, Message> = if crate::gnome::active() {
+        crate::gnome::header_icon(icon_name, false, on_press).into()
+    } else {
+        widget::button::icon(icon::from_name(icon_name))
+            .on_press(on_press)
+            .into()
+    };
     widget::tooltip(
-        widget::button::icon(icon::from_name(icon_name)).on_press(on_press),
+        button,
         widget::text::body(label),
         widget::tooltip::Position::Bottom,
     )

@@ -10,6 +10,7 @@ mod desktop;
 mod dockicon;
 mod editor;
 mod glyph;
+mod gnome;
 mod i18n;
 mod icon;
 mod images;

@@ -136,6 +136,9 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   system theme around it and GNOME's window outline whenever
   `outline_stale()` finds libcosmic has installed a fresh one. The ignored
   `portal_signal_probe` test checks the signal path against a real session.
+- `src/gnome.rs` — the GNOME look (only when `desktop` says GNOME):
+  libadwaita-style window controls drawn in `header_end` (libcosmic's own
+  are switched off in `init`), flat title-bar buttons, popover menu style.
 - `src/launcher.rs` — `attic --launcher-plugin`: the COSMIC launcher
   (pop-launcher) plugin, the GNOME search provider's twin: JSON lines on
   stdin/stdout, `note <words>` lists hits from the read-only index, picking
@@ -183,8 +186,9 @@ files) and `build.rs` live in `apps/jjb-cosmic/`.
   inside it. Server-visible metadata is id/revision/timestamp/device only
   (for files: a hash of the path, never the name).
 - Retro styling belongs to the editor surface and themes only. Chrome stays
-  stock COSMIC (which, on GNOME, means stock libcosmic wearing GNOME's fonts
-  and icons — never GTK, never a second toolkit), but on the note theme's
+  stock COSMIC on COSMIC; on GNOME it is libcosmic dressed as libadwaita
+  (`src/gnome.rs`: window controls, flat title-bar buttons, popover menus;
+  fonts and icons from GNOME) — never GTK, never a second toolkit — but on the note theme's
   side: a light theme means light chrome (`App::chrome_dark` →
   `desktop::set_chrome_dark`; the "follows your desktop" theme hands the
   choice back to the desktop).

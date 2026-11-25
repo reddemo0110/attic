@@ -1676,3 +1676,28 @@ image breaks a heading mid-word when the column is under ~100 px.
   captures through Firefox take a few seconds a page; infinite scroll
   is not followed; Windows has no Firefox lookup beyond `PATH`.
 - Harness: `xshot.py --act wait:SECONDS`.
+
+## 2026-11-25 — GNOME look for the chrome, still libcosmic
+
+- Asked for: Attic's window should look like any other GNOME window,
+  menus included. Settled as a restyle, not a toolkit change: on GNOME
+  the title bar and menus are libcosmic widgets dressed after libadwaita
+  (`src/gnome.rs`); never GTK, so the rule below "Chrome stays stock
+  COSMIC" now reads "stock COSMIC on COSMIC, libadwaita's look on GNOME".
+- libcosmic's window controls are hard-coded in its header bar and drawn
+  `selected` while the window is focused, which tints them in the accent
+  colour; there is no style hook for them. On GNOME they are switched off
+  (`core.window.show_close/maximize/minimize`) and `header_end` draws its
+  own: libadwaita's 24 px circles at 10 % of the text colour (15 % hover,
+  30 % pressed), minimize / maximize still gated on GNOME's
+  `button-layout` through `cosmic::config::show_*`. Close goes through
+  `Message::Quit`, which flushes first.
+- Title-bar buttons use libadwaita's `button.flat` numbers (6 px radius,
+  34 px, 7 % / 16 %, 10 % when checked); menus get a custom
+  `MenuBarStyle` (popover colour, 12 px radius, 6 px padding, faint
+  outline) and 32 px rows with no spacing. Menu item hover still comes
+  from libcosmic's component colours; that needs our own item widgets
+  and was left out.
+- The menu bar itself stays: libadwaita apps use one primary (☰) menu
+  instead, but moving File/Edit/Format/View into it changes how the app
+  is used, so it is a separate decision.
