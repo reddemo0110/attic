@@ -5040,7 +5040,6 @@ impl AppModel {
         // Colour.
         col = col.push(header(fl!("section-colour"), Section::Colour));
         if self.appearance_open[Section::Colour as usize] {
-            col = col.push(widget::text::caption(fl!("theme-picker-hint")));
             let swatch = |theme: retro::Theme| {
                 retro::swatch(
                     theme,
@@ -5050,7 +5049,21 @@ impl AppModel {
                     Message::SetTheme(theme),
                 )
             };
-            for theme in self.themes().into_iter().filter(|t| !t.is_minimal()) {
+            col = col.push(widget::text::heading(fl!("theme-light-header")));
+            col = col.push(widget::text::caption(fl!("theme-light-hint")));
+            for theme in retro::Theme::ALL.into_iter().filter(|t| t.is_light()) {
+                col = col.push(swatch(theme));
+            }
+            col = col.push(
+                widget::container(widget::text::heading(fl!("theme-classic-header")))
+                    .padding([10, 0, 0, 0]),
+            );
+            col = col.push(widget::text::caption(fl!("theme-picker-hint")));
+            for theme in self
+                .themes()
+                .into_iter()
+                .filter(|t| !t.is_minimal() && !t.is_light())
+            {
                 col = col.push(swatch(theme));
             }
             col = col.push(

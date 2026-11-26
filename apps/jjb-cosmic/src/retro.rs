@@ -22,6 +22,27 @@ pub const TITLE_FONT: Font = Font {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Theme {
+    // The light family: white paper, dark ink, colour used sparingly.
+    /// Ink navy and one ocean blue on paper, after @uxdam_.
+    DeepWater,
+    /// Stickdazzle's "Retro TV Glow": red pop, blue links, slate ink.
+    RetroTvGlow,
+    /// Zentinal's "Ocean Breeze": navy, sky, and Sunny as the highlighter.
+    OceanBreeze,
+    /// Stormy Teal, Oxidized Iron and Pale Oak, after @themoidesign.
+    OxidizedIron,
+    /// Charcoal, Ebony, Sunray and Blond: coffee in the morning.
+    Sunray,
+    /// Rust, Ivory, Marina and Slate Gray.
+    Marina,
+    /// Aegean Sky, Sandy Linen and Scarlet Bikini.
+    AegeanSky,
+    /// The knitted beanie: four sea-greys, no bright one at all.
+    Beanie,
+    /// White, Blue, Navy Blue and an orange spritz on the deck.
+    Spritz,
+    /// Keppel, Cinnabar, Almond and Dim Gray, by the pool.
+    Poolside,
     /// P1 green phosphor, the classic terminal.
     #[default]
     Phosphor,
@@ -125,7 +146,17 @@ pub enum Theme {
 }
 
 impl Theme {
-    pub const ALL: [Theme; 47] = [
+    pub const ALL: [Theme; 57] = [
+        Theme::DeepWater,
+        Theme::RetroTvGlow,
+        Theme::OceanBreeze,
+        Theme::OxidizedIron,
+        Theme::Sunray,
+        Theme::Marina,
+        Theme::AegeanSky,
+        Theme::Beanie,
+        Theme::Spritz,
+        Theme::Poolside,
         Theme::Phosphor,
         Theme::Amber,
         Theme::WordPerfect,
@@ -239,6 +270,16 @@ impl Theme {
             // Exhaustive on purpose: a new variant must declare its side
             // here, or `palette()`'s catch-all would panic at runtime.
             Theme::Phosphor
+            | Theme::DeepWater
+            | Theme::RetroTvGlow
+            | Theme::OceanBreeze
+            | Theme::OxidizedIron
+            | Theme::Sunray
+            | Theme::Marina
+            | Theme::AegeanSky
+            | Theme::Beanie
+            | Theme::Spritz
+            | Theme::Poolside
             | Theme::Amber
             | Theme::WordPerfect
             | Theme::Paper
@@ -261,6 +302,16 @@ impl Theme {
     pub fn key(self) -> &'static str {
         match self {
             Theme::Phosphor => "phosphor",
+            Theme::DeepWater => "deepwater",
+            Theme::RetroTvGlow => "retrotvglow",
+            Theme::OceanBreeze => "oceanbreeze",
+            Theme::OxidizedIron => "oxidizediron",
+            Theme::Sunray => "sunray",
+            Theme::Marina => "marina",
+            Theme::AegeanSky => "aegeansky",
+            Theme::Beanie => "beanie",
+            Theme::Spritz => "spritz",
+            Theme::Poolside => "poolside",
             Theme::LongBlack => "longblack",
             Theme::Amber => "amber",
             Theme::WordPerfect => "wordperfect",
@@ -324,6 +375,16 @@ impl Theme {
     pub fn label(self) -> &'static str {
         match self {
             Theme::Phosphor => "The Terminalator",
+            Theme::DeepWater => "Deep Water",
+            Theme::RetroTvGlow => "Retro TV Glow",
+            Theme::OceanBreeze => "Ocean Breeze",
+            Theme::OxidizedIron => "Oxidized Iron",
+            Theme::Sunray => "Sunray",
+            Theme::Marina => "Marina",
+            Theme::AegeanSky => "Aegean Sky",
+            Theme::Beanie => "Beanie",
+            Theme::Spritz => "Spritz",
+            Theme::Poolside => "Poolside",
             Theme::LongBlack => "Long Black",
             Theme::Amber => "Amber Dawn",
             Theme::WordPerfect => "Big Trouble in Little Blue",
@@ -378,6 +439,16 @@ impl Theme {
     pub fn blurb(self) -> &'static str {
         match self {
             Theme::Phosphor => "P1 green phosphor. It'll be back.",
+            Theme::DeepWater => "#007AAD on paper, navy ink, mist margins",
+            Theme::RetroTvGlow => "CRT static: red headings, blue links, slate ink",
+            Theme::OceanBreeze => "navy ink, sky links, a Sunny yellow highlighter",
+            Theme::OxidizedIron => "iron-red headings, stormy teal links, pale oak",
+            Theme::Sunray => "charcoal and ebony with a blond highlighter",
+            Theme::Marina => "rust headings, marina ink on ivory",
+            Theme::AegeanSky => "scarlet bikini headings, Aegean links, linen",
+            Theme::Beanie => "four knitted sea-greys and not one shout",
+            Theme::Spritz => "orange spritz on deck, navy ink, harbour blue",
+            Theme::Poolside => "cinnabar headings, keppel links, almond shade",
             Theme::LongBlack => "Crema on espresso. You found the counter.",
             Theme::Amber => "P3 amber monochrome. Wolverines!",
             Theme::WordPerfect => "white on WordPerfect blue, F-keys optional",
@@ -428,9 +499,73 @@ impl Theme {
         }
     }
 
+    /// The light family: white paper, colour kept for a few things.
+    pub fn is_light(self) -> bool {
+        self.light_palette().is_some()
+    }
+
+    /// The light family's palettes. Each card's bright colour goes to the
+    /// accent (H1/H2, list markers, caret, selection tint) and its second
+    /// colour to tags, links and code; ink is the card's darkest colour and
+    /// its pale one tints the panels and borders. Colours too faint to read
+    /// on white are deepened just enough (same hue): heading colours to 3:1,
+    /// link colours to 4.5:1. A yellow that can't carry text becomes the
+    /// selection highlighter instead.
+    fn light_palette(self) -> Option<Palette> {
+        let white = hex(0xffffff);
+        Some(match self {
+            Theme::DeepWater => {
+                light(hex(0xfffbfc), hex(0x0c1d32), hex(0x007aad), hex(0x007aad), hex(0xd9e2e9), None)
+            }
+            Theme::RetroTvGlow => {
+                light(white, hex(0x34495e), hex(0xe74c3c), hex(0x2b7cb3), hex(0xecf0f1), None)
+            }
+            // Sky, deepened; Sunny is the highlighter.
+            Theme::OceanBreeze => light(
+                white,
+                hex(0x14304a),
+                hex(0x2497da),
+                hex(0x1e7db5),
+                hex(0xe8f4f8),
+                Some(mix(white, hex(0xffc94a), 0.55)),
+            ),
+            Theme::OxidizedIron => {
+                light(white, hex(0x1e3a40), hex(0xa8371c), hex(0x32707c), hex(0xd4c4b7), None)
+            }
+            // Sunray deepened to read as a heading; Blond is the highlighter.
+            Theme::Sunray => light(
+                white,
+                hex(0x282823),
+                hex(0xb98719),
+                hex(0x595c56),
+                hex(0xf5e8b6),
+                Some(hex(0xf5e8b6)),
+            ),
+            Theme::Marina => {
+                light(hex(0xf8f7f0), hex(0x222b52), hex(0xb25640), hex(0x6c727a), hex(0xd9dade), None)
+            }
+            Theme::AegeanSky => {
+                light(white, hex(0x0f2a4a), hex(0xd21624), hex(0x1664b0), hex(0xefe8de), None)
+            }
+            Theme::Beanie => {
+                light(white, hex(0x304545), hex(0x4e6564), hex(0x667a77), hex(0xafb4ad), None)
+            }
+            Theme::Spritz => {
+                light(hex(0xf9f9f9), hex(0x092634), hex(0xf55a2a), hex(0x004e72), hex(0xdfe5e8), None)
+            }
+            Theme::Poolside => {
+                light(white, hex(0x2e2924), hex(0xec5d3d), hex(0x368373), hex(0xe9dacd), None)
+            }
+            _ => return None,
+        })
+    }
+
     pub fn palette(self, cosmic: &cosmic::Theme) -> Palette {
         if let Some(accent) = self.minimal_accent() {
             return minimal(accent);
+        }
+        if let Some(p) = self.light_palette() {
+            return p;
         }
         match self {
             Theme::LongBlack => Palette {
@@ -1154,6 +1289,27 @@ impl Highlight {
             Highlight::Paper if light_mode => ink.color(),
             Highlight::Paper => Self::PAPER.color(),
         }
+    }
+}
+
+/// A light-family palette: `bg` paper, `fg` ink, `accent` the bright one,
+/// `accent2` for tags and links, `tint` the card's pale colour for panels
+/// and borders, `sel` a highlighter if the card has one to spare.
+fn light(bg: Color, fg: Color, accent: Color, accent2: Color, tint: Color, sel: Option<Color>) -> Palette {
+    Palette {
+        bg,
+        panel: mix(bg, tint, 0.3),
+        fg,
+        dim: mix(bg, fg, 0.62),
+        mute: mix(bg, fg, 0.3),
+        accent,
+        accent2,
+        border: mix(bg, tint, 0.8),
+        sel: sel.unwrap_or_else(|| mix(bg, accent, 0.2)),
+        selfg: fg,
+        caret: accent,
+        h3: fg,
+        title: mix(bg, fg, 0.62),
     }
 }
 
