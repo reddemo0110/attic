@@ -8,14 +8,15 @@ Format after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Ten light colour themes**, at the top of Options → **Colour Themes**
-  (the section was called Colour). Each is white paper and dark ink
-  after a designer's colour card: Deep Water, Retro TV Glow, Ocean
-  Breeze, Oxidized Iron, Sunray, Marina, Aegean Sky, Beanie, Spritz and
-  Poolside. Colour is used sparingly, the way the cards use it: the
-  bright one for headings, bullets and the caret, a second for tags and
-  links, the card's pale one for the side panels. A bright colour too
-  faint to read on white is deepened just enough to read; Ocean Breeze
-  and Sunray use their yellows as the text highlighter instead.
+  (the section was called Colour). Each is built from a designer's
+  colour card: Deep Water, Retro TV Glow, Ocean Breeze, Oxidized Iron,
+  Sunray, Marina, Aegean Sky, Beanie, Spritz and Poolside. The editor
+  and notes list sit on the card's white (or a colour-buffet white when
+  the card has none), and only the tags pane wears the card's pale
+  colour. The card's other colours share out the rest, sparingly: H1,
+  H2, bullets and checkboxes, the highlighter, tags and links, and the
+  selection each take one. A colour too faint to read on white is
+  deepened just enough to read.
 - **Capture from the web**: a new cloud icon in the dock opens a panel
   where you paste one or more web addresses and press **Capture**. Each
   address becomes a new note holding the page's text, cleaned up the way

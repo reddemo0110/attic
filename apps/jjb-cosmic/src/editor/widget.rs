@@ -667,7 +667,7 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
                     },
                     ..Quad::default()
                 },
-                Background::Color(p.accent.scale_alpha(0.32)),
+                Background::Color(p.mark),
             );
         }
         for r in &overlays.quote_bars {
@@ -763,14 +763,14 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
                 Quad {
                     bounds: rect,
                     border: Border {
-                        color: if b.done { p.accent } else { p.dim },
+                        color: if b.done { p.marker } else { p.dim },
                         width: 1.5,
                         radius: 3.0.into(),
                     },
                     ..Quad::default()
                 },
                 Background::Color(if b.done {
-                    p.accent.scale_alpha(0.18)
+                    p.marker.scale_alpha(0.18)
                 } else {
                     Color::TRANSPARENT
                 }),
@@ -792,7 +792,7 @@ impl<Message> Widget<Message, cosmic::Theme, cosmic::Renderer> for RichEditor<'_
                         ellipsize: cosmic::iced::advanced::text::Ellipsize::None,
                     },
                     Point::new(rect.center_x(), rect.center_y()),
-                    p.accent,
+                    p.marker,
                     rect.expand(4.0),
                 );
             }

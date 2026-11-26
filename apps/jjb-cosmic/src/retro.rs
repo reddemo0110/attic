@@ -504,60 +504,137 @@ impl Theme {
         self.light_palette().is_some()
     }
 
-    /// The light family's palettes. Each card's bright colour goes to the
-    /// accent (H1/H2, list markers, caret, selection tint) and its second
-    /// colour to tags, links and code; ink is the card's darkest colour and
-    /// its pale one tints the panels and borders. Colours too faint to read
-    /// on white are deepened just enough (same hue): heading colours to 3:1,
-    /// link colours to 4.5:1. A yellow that can't carry text becomes the
-    /// selection highlighter instead.
+    /// The light family's palettes, one role per card colour (see `Card`).
+    /// The editor and notes list sit on the card's white, or a colour-buffet
+    /// white when the card has none; only the tags pane wears the card's
+    /// pale colour. Colours too faint to read as text on white are deepened
+    /// just enough (same hue): heading colours to 3:1, link colours to 4.5:1.
+    #[allow(clippy::too_many_lines)]
     fn light_palette(self) -> Option<Palette> {
-        let white = hex(0xffffff);
-        Some(match self {
-            Theme::DeepWater => {
-                light(hex(0xfffbfc), hex(0x0c1d32), hex(0x007aad), hex(0x007aad), hex(0xd9e2e9), None)
-            }
-            Theme::RetroTvGlow => {
-                light(white, hex(0x34495e), hex(0xe74c3c), hex(0x2b7cb3), hex(0xecf0f1), None)
-            }
-            // Sky, deepened; Sunny is the highlighter.
-            Theme::OceanBreeze => light(
-                white,
-                hex(0x14304a),
-                hex(0x2497da),
-                hex(0x1e7db5),
-                hex(0xe8f4f8),
-                Some(mix(white, hex(0xffc94a), 0.55)),
-            ),
-            Theme::OxidizedIron => {
-                light(white, hex(0x1e3a40), hex(0xa8371c), hex(0x32707c), hex(0xd4c4b7), None)
-            }
-            // Sunray deepened to read as a heading; Blond is the highlighter.
-            Theme::Sunray => light(
-                white,
-                hex(0x282823),
-                hex(0xb98719),
-                hex(0x595c56),
-                hex(0xf5e8b6),
-                Some(hex(0xf5e8b6)),
-            ),
-            Theme::Marina => {
-                light(hex(0xf8f7f0), hex(0x222b52), hex(0xb25640), hex(0x6c727a), hex(0xd9dade), None)
-            }
-            Theme::AegeanSky => {
-                light(white, hex(0x0f2a4a), hex(0xd21624), hex(0x1664b0), hex(0xefe8de), None)
-            }
-            Theme::Beanie => {
-                light(white, hex(0x304545), hex(0x4e6564), hex(0x667a77), hex(0xafb4ad), None)
-            }
-            Theme::Spritz => {
-                light(hex(0xf9f9f9), hex(0x092634), hex(0xf55a2a), hex(0x004e72), hex(0xdfe5e8), None)
-            }
-            Theme::Poolside => {
-                light(white, hex(0x2e2924), hex(0xec5d3d), hex(0x368373), hex(0xe9dacd), None)
-            }
+        let card = match self {
+            // #007AAD, #D9E2E9, #FFFBFC, #0C1D32: one blue does it all.
+            Theme::DeepWater => Card {
+                paper: hex(0xfffbfc),
+                tags: hex(0xd9e2e9),
+                ink: hex(0x0c1d32),
+                h1: hex(0x007aad),
+                h2: hex(0x0c1d32),
+                link: hex(0x007aad),
+                marker: hex(0x007aad),
+                mark: hex(0xd9e2e9),
+                sel: mix(hex(0xfffbfc), hex(0x007aad), 0.2),
+            },
+            // #2E86C1, #34495E, #ECF0F1, #E74C3C.
+            Theme::RetroTvGlow => Card {
+                paper: hex(0xecf0f1),
+                tags: mix(hex(0xecf0f1), hex(0x34495e), 0.07),
+                ink: hex(0x34495e),
+                h1: hex(0xe74c3c),
+                h2: hex(0x2b7cb3),
+                link: hex(0x2b7cb3),
+                marker: hex(0xe74c3c),
+                mark: hex(0xe74c3c).scale_alpha(0.25),
+                sel: mix(hex(0xecf0f1), hex(0x2e86c1), 0.25),
+            },
+            // Navy #14304A, Sunny #FFC94A, Foam #E8F4F8, Sky #5AB1E4.
+            Theme::OceanBreeze => Card {
+                paper: Light::NearlyWhite.color(),
+                tags: hex(0xe8f4f8),
+                ink: hex(0x14304a),
+                h1: hex(0x2497da),
+                h2: hex(0x14304a),
+                link: hex(0x1e7db5),
+                marker: hex(0x2497da),
+                mark: hex(0xffc94a).scale_alpha(0.6),
+                sel: mix(Light::NearlyWhite.color(), hex(0x5ab1e4), 0.3),
+            },
+            // Stormy Teal #32707C, Oxidized Iron #A8371C, Pale Oak #D4C4B7.
+            Theme::OxidizedIron => Card {
+                paper: Light::OffWhite.color(),
+                tags: hex(0xd4c4b7),
+                ink: hex(0x1e3a40),
+                h1: hex(0xa8371c),
+                h2: hex(0x32707c),
+                link: hex(0x32707c),
+                marker: hex(0xa8371c),
+                mark: hex(0xd4c4b7).scale_alpha(0.8),
+                sel: mix(Light::OffWhite.color(), hex(0x32707c), 0.22),
+            },
+            // Charcoal #282823, Ebony #595C56, Sunray #E9BE5F, Blond #F5E8B6.
+            Theme::Sunray => Card {
+                paper: Light::WarmWhite.color(),
+                tags: hex(0xf5e8b6),
+                ink: hex(0x282823),
+                h1: hex(0xb98719),
+                h2: hex(0x595c56),
+                link: hex(0x595c56),
+                marker: hex(0xb98719),
+                mark: hex(0xe9be5f).scale_alpha(0.55),
+                sel: hex(0xf5e8b6),
+            },
+            // Rust #B25640, Ivory #F8F7F0, Marina #222B52, Slate Gray #7F858D.
+            Theme::Marina => Card {
+                paper: hex(0xf8f7f0),
+                tags: mix(hex(0xf8f7f0), hex(0x7f858d), 0.15),
+                ink: hex(0x222b52),
+                h1: hex(0xb25640),
+                h2: hex(0x222b52),
+                link: hex(0x6c727a),
+                marker: hex(0xb25640),
+                mark: hex(0xb25640).scale_alpha(0.22),
+                sel: mix(hex(0xf8f7f0), hex(0x7f858d), 0.3),
+            },
+            // Aegean Sky #1664B0, Sandy Linen #EFE8DE, Scarlet Bikini #D21624.
+            Theme::AegeanSky => Card {
+                paper: Light::OffWhite.color(),
+                tags: hex(0xefe8de),
+                ink: hex(0x0f2a4a),
+                h1: hex(0xd21624),
+                h2: hex(0x1664b0),
+                link: hex(0x1664b0),
+                marker: hex(0xd21624),
+                mark: hex(0xd21624).scale_alpha(0.2),
+                sel: mix(Light::OffWhite.color(), hex(0x1664b0), 0.2),
+            },
+            // #304545, #738986, #4E6564, #AFB4AD.
+            Theme::Beanie => Card {
+                paper: Light::NearlyWhite.color(),
+                tags: mix(Light::NearlyWhite.color(), hex(0xafb4ad), 0.45),
+                ink: hex(0x304545),
+                h1: hex(0x4e6564),
+                h2: hex(0x667a77),
+                link: hex(0x667a77),
+                marker: hex(0x738986),
+                mark: hex(0xafb4ad).scale_alpha(0.55),
+                sel: mix(Light::NearlyWhite.color(), hex(0xafb4ad), 0.45),
+            },
+            // White #F9F9F9, Blue #004E72, Navy Blue #092634, Orange #FF6E42.
+            Theme::Spritz => Card {
+                paper: hex(0xf9f9f9),
+                tags: mix(hex(0xf9f9f9), hex(0x004e72), 0.07),
+                ink: hex(0x092634),
+                h1: hex(0xf55a2a),
+                h2: hex(0x004e72),
+                link: hex(0x004e72),
+                marker: hex(0xff6e42),
+                mark: hex(0xff6e42).scale_alpha(0.28),
+                sel: mix(hex(0xf9f9f9), hex(0x004e72), 0.18),
+            },
+            // Keppel #6CC2B1, Cinnabar #EC5D3D, Almond #E9DACD, Dim Gray #72665C.
+            Theme::Poolside => Card {
+                paper: Light::WarmWhite.color(),
+                tags: hex(0xe9dacd),
+                ink: hex(0x2e2924),
+                h1: hex(0xec5d3d),
+                h2: hex(0x368373),
+                link: hex(0x368373),
+                marker: hex(0x6cc2b1),
+                mark: hex(0x6cc2b1).scale_alpha(0.45),
+                sel: hex(0xe9dacd),
+            },
             _ => return None,
-        })
+        };
+        Some(light(&card))
     }
 
     pub fn palette(self, cosmic: &cosmic::Theme) -> Palette {
@@ -582,6 +659,9 @@ impl Theme {
                 caret: hex(0xf1e2c8),
                 h3: hex(0xe0a262),
                 title: hex(0xe0a262),
+                h2: hex(0xe0a262),
+                marker: hex(0xe0a262),
+                mark: hex(0xe0a262).scale_alpha(0.32),
             },
             Theme::Phosphor => Palette {
                 bg: hex(0x050806),
@@ -597,6 +677,9 @@ impl Theme {
                 caret: hex(0xb9f2bf),
                 h3: hex(0x4dff8f),
                 title: hex(0x4dff8f),
+                h2: hex(0x4dff8f),
+                marker: hex(0x4dff8f),
+                mark: hex(0x4dff8f).scale_alpha(0.32),
             },
             Theme::Amber => Palette {
                 bg: hex(0x0b0704),
@@ -612,6 +695,9 @@ impl Theme {
                 caret: hex(0xffc978),
                 h3: hex(0xffb02e),
                 title: hex(0xffb02e),
+                h2: hex(0xffb02e),
+                marker: hex(0xffb02e),
+                mark: hex(0xffb02e).scale_alpha(0.32),
             },
             Theme::WordPerfect => Palette {
                 bg: hex(0x1c2874),
@@ -627,6 +713,9 @@ impl Theme {
                 caret: hex(0xe6e8ee),
                 h3: hex(0xf0e07c),
                 title: hex(0xf0e07c),
+                h2: hex(0xf0e07c),
+                marker: hex(0xf0e07c),
+                mark: hex(0xf0e07c).scale_alpha(0.32),
             },
             Theme::Paper => Palette {
                 bg: hex(0x0a0a0b),
@@ -642,6 +731,9 @@ impl Theme {
                 caret: hex(0xe8e8e8),
                 h3: hex(0xffffff),
                 title: hex(0xffffff),
+                h2: hex(0xffffff),
+                marker: hex(0xffffff),
+                mark: hex(0xffffff).scale_alpha(0.32),
             },
             Theme::Plasma => Palette {
                 bg: hex(0x180500),
@@ -657,6 +749,9 @@ impl Theme {
                 caret: hex(0xff8f3c),
                 h3: hex(0xffb66b),
                 title: hex(0xffb66b),
+                h2: hex(0xffb66b),
+                marker: hex(0xffb66b),
+                mark: hex(0xffb66b).scale_alpha(0.32),
             },
             Theme::C64 => Palette {
                 bg: hex(0x443c86),
@@ -672,6 +767,9 @@ impl Theme {
                 caret: hex(0xbdb8ee),
                 h3: hex(0xd0d68e),
                 title: hex(0xd0d68e),
+                h2: hex(0xd0d68e),
+                marker: hex(0xd0d68e),
+                mark: hex(0xd0d68e).scale_alpha(0.32),
             },
             Theme::GameBoy => Palette {
                 // The real DMG screen: muted olive, not emulator lime.
@@ -688,6 +786,9 @@ impl Theme {
                 caret: hex(0x1f261a),
                 h3: hex(0x2c3a24),
                 title: hex(0x2c3a24),
+                h2: hex(0x2c3a24),
+                marker: hex(0x2c3a24),
+                mark: hex(0x2c3a24).scale_alpha(0.32),
             },
             Theme::Synthwave => Palette {
                 bg: hex(0x120823),
@@ -703,6 +804,9 @@ impl Theme {
                 caret: hex(0xf2dcff),
                 h3: hex(0xff6ec7),
                 title: hex(0xff6ec7),
+                h2: hex(0xff6ec7),
+                marker: hex(0xff6ec7),
+                mark: hex(0xff6ec7).scale_alpha(0.32),
             },
             Theme::White => Palette {
                 bg: hex(0xffffff),
@@ -718,6 +822,9 @@ impl Theme {
                 caret: hex(0x0c0c0c),
                 h3: hex(0x0c0c0c),
                 title: hex(0x0c0c0c),
+                h2: hex(0x0c0c0c),
+                marker: hex(0x0c0c0c),
+                mark: hex(0x0c0c0c).scale_alpha(0.32),
             },
             Theme::Goldfish => Palette {
                 bg: hex(0x0f1a1e),
@@ -733,6 +840,9 @@ impl Theme {
                 caret: hex(0xe0e4cc),
                 h3: hex(0xfa6900),
                 title: hex(0xfa6900),
+                h2: hex(0xfa6900),
+                marker: hex(0xfa6900),
+                mark: hex(0xfa6900).scale_alpha(0.32),
             },
             Theme::GoldfishMuted => Palette {
                 bg: hex(0x0f1a1e),
@@ -748,6 +858,9 @@ impl Theme {
                 caret: hex(0xe0e4cc),
                 h3: hex(0xc9773f),
                 title: hex(0xc9773f),
+                h2: hex(0xc9773f),
+                marker: hex(0xc9773f),
+                mark: hex(0xc9773f).scale_alpha(0.32),
             },
             Theme::Provoking => Palette {
                 bg: hex(0x2a1520),
@@ -763,6 +876,9 @@ impl Theme {
                 caret: hex(0xf0dcb0),
                 h3: hex(0xd95b43),
                 title: hex(0xd95b43),
+                h2: hex(0xd95b43),
+                marker: hex(0xd95b43),
+                mark: hex(0xd95b43).scale_alpha(0.32),
             },
             Theme::EmoKid => Palette {
                 bg: hex(0x1e252b),
@@ -778,6 +894,9 @@ impl Theme {
                 caret: hex(0xe6edf0),
                 h3: hex(0x4ecdc4),
                 title: hex(0x4ecdc4),
+                h2: hex(0x4ecdc4),
+                marker: hex(0x4ecdc4),
+                mark: hex(0x4ecdc4).scale_alpha(0.32),
             },
             Theme::OceanFive => Palette {
                 bg: hex(0x0d1b1e),
@@ -793,6 +912,9 @@ impl Theme {
                 caret: hex(0xf2e8d0),
                 h3: hex(0xeb6841),
                 title: hex(0xeb6841),
+                h2: hex(0xeb6841),
+                marker: hex(0xeb6841),
+                mark: hex(0xeb6841).scale_alpha(0.32),
             },
             Theme::Adrift => Palette {
                 bg: hex(0x081f2d),
@@ -808,6 +930,9 @@ impl Theme {
                 caret: hex(0xdfe8d8),
                 h3: hex(0xcff09e),
                 title: hex(0xcff09e),
+                h2: hex(0xcff09e),
+                marker: hex(0xcff09e),
+                mark: hex(0xcff09e).scale_alpha(0.32),
             },
             Theme::Cosmic => {
                 let c = cosmic.cosmic();
@@ -829,6 +954,9 @@ impl Theme {
                     caret: fg,
                     h3: accent,
                     title: accent,
+                    h2: accent,
+                    marker: accent,
+                    mark: accent.scale_alpha(0.32),
                 }
             }
             t => unreachable!("minimal {t:?} returned above"),
@@ -1182,6 +1310,13 @@ pub struct Palette {
     /// Pane header text. The classics use `accent`; the minimal themes
     /// keep their headers quiet.
     pub title: Color,
+    /// H2 text. `accent` except on the light family, which gives H1 and
+    /// H2 different colours from the card.
+    pub h2: Color,
+    /// List markers and checkboxes. `accent` except on the light family.
+    pub marker: Color,
+    /// The `==highlighter==` band, alpha included.
+    pub mark: Color,
 }
 
 fn hex(rgb: u32) -> Color {
@@ -1224,6 +1359,9 @@ pub fn minimal_with(accent: Color, bg: Color, fg: Color) -> Palette {
         caret: accent,
         h3: fg,
         title: mix(bg, fg, 0.63),
+        h2: accent,
+        marker: accent,
+        mark: accent.scale_alpha(0.32),
     }
 }
 
@@ -1292,24 +1430,44 @@ impl Highlight {
     }
 }
 
-/// A light-family palette: `bg` paper, `fg` ink, `accent` the bright one,
-/// `accent2` for tags and links, `tint` the card's pale colour for panels
-/// and borders, `sel` a highlighter if the card has one to spare.
-fn light(bg: Color, fg: Color, accent: Color, accent2: Color, tint: Color, sel: Option<Color>) -> Palette {
+/// One light theme's colour card, by role.
+struct Card {
+    /// The editor and notes list: the card's white.
+    paper: Color,
+    /// The tags pane, the only place the card's pale colour fills.
+    tags: Color,
+    ink: Color,
+    /// H1, the caret.
+    h1: Color,
+    h2: Color,
+    /// Tags, links and code.
+    link: Color,
+    /// List markers and checkboxes.
+    marker: Color,
+    /// The `==highlighter==` band.
+    mark: Color,
+    /// Selected text and the selected note.
+    sel: Color,
+}
+
+fn light(c: &Card) -> Palette {
     Palette {
-        bg,
-        panel: mix(bg, tint, 0.3),
-        fg,
-        dim: mix(bg, fg, 0.62),
-        mute: mix(bg, fg, 0.3),
-        accent,
-        accent2,
-        border: mix(bg, tint, 0.8),
-        sel: sel.unwrap_or_else(|| mix(bg, accent, 0.2)),
-        selfg: fg,
-        caret: accent,
-        h3: fg,
-        title: mix(bg, fg, 0.62),
+        bg: c.tags,
+        panel: c.paper,
+        fg: c.ink,
+        dim: mix(c.paper, c.ink, 0.62),
+        mute: mix(c.paper, c.ink, 0.3),
+        accent: c.h1,
+        accent2: c.link,
+        border: mix(c.paper, c.ink, 0.14),
+        sel: c.sel,
+        selfg: c.ink,
+        caret: c.h1,
+        h3: c.ink,
+        title: mix(c.paper, c.ink, 0.62),
+        h2: c.h2,
+        marker: c.marker,
+        mark: c.mark,
     }
 }
 
@@ -2455,7 +2613,7 @@ pub fn swatch<'a, M: Clone + 'static>(
         .width(Length::Fill)
         .class(theme::Container::custom(move |_| {
             widget::container::Style {
-                background: Some(Background::Color(p.bg)),
+                background: Some(Background::Color(p.panel)),
                 border: Border {
                     color: border,
                     width: if selected { 2.0 } else { 1.0 },

@@ -169,6 +169,7 @@ pub fn span_attrs(
         // H3 down take the palette's `h3` colour — the accent on the
         // classics, plain text on the minimal themes.
         Kind::Heading if level >= 3 => styled().weight(Weight::BOLD).color(color(p.h3)),
+        Kind::Heading if level == 2 => styled().weight(Weight::BOLD).color(color(p.h2)),
         Kind::Heading => styled().weight(Weight::BOLD),
         Kind::Link => styled().metadata(META_LINK),
         Kind::Tag => styled().metadata(META_TAG),

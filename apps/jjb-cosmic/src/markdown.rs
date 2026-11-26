@@ -64,14 +64,14 @@ pub fn style_for(kind: Kind, settings: &Settings) -> Highlight {
             Kind::Heading => (p.accent, Some(bold)),
             Kind::Tag | Kind::Link => (p.accent2, None),
             Kind::LinkUrl => (ghost, None),
-            Kind::ListMarker | Kind::NumMarker => (p.accent, None),
+            Kind::ListMarker | Kind::NumMarker => (p.marker, None),
             Kind::Quote => (p.dim, Some(italic)),
             // Finished tasks fade into the theme rather than change colour.
             Kind::Done | Kind::Strike => (p.fg.scale_alpha(0.45), None),
             // The band behind it carries the colour; the text stays put.
             Kind::Mark => (p.fg, None),
             Kind::TaskBox => (p.dim, None),
-            Kind::TaskDone => (p.accent, Some(bold)),
+            Kind::TaskDone => (p.marker, Some(bold)),
         };
         Highlight {
             color: Some(color),
